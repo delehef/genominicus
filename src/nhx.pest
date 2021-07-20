@@ -1,0 +1,24 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+
+// tree = _{ SOI ~ (SubTree ~ Length? | Branch ) ~ ";" ~ EOI } // Meh...
+Tree = _{ SOI ~ (SubTree  | Branch ) ~ Length? ~ ";" ~ EOI }
+Branch = { SubTree? ~ Length? }
+SubTree = { Leaf | Internal }
+Leaf = { name }
+Internal = { "(" ~ BranchSet ~ ")" ~ name? }
+BranchSet = { Branch? ~ ("," ~ Branch?)* }
+Length = _{ ":" ~ float ~ Nhx? }
+Nhx = { "[&&NHX" ~ Entry+ ~ "]" }
+Entry = { ":" ~ nhx_key ~ "=" ~ nhx_value }
+
+nhx_safe = _{ !( ":" | "," | ";" | "(" | ")" | "[" | "]" | "=" | WHITESPACE ) ~ ANY }
+nhx_key = { nhx_safe+ }
+nhx_value = { nhx_safe+ }
+safe =     _{ !( ":" | "," | ";" | "(" | ")" | "[" | "]" | WHITESPACE ) ~ ANY }
+name = { safe+ }
+float = @{
+    "-"?
+    ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*)
+    ~ ("." ~ ASCII_DIGIT*)?
+    ~ (^"e" ~ ("+" | "-")? ~ ASCII_DIGIT+)?
+}
