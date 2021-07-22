@@ -165,78 +165,83 @@ fn draw_tree(
 
             if let Some(name) = &child.name {
                 let protein_name = name.split('_').next().unwrap();
-                let r = pg.query_one(ANCESTRAL_QUERY, &[&protein_name]).unwrap();
-                let gene_name: &str = r.get("name");
-                let ancestral_name: &str = r.get("ancestral");
-                let species: &str = r.get("species");
-                let chr: &str = r.get("chr");
-                let pos: i32 = r.get("start");
-                let direction: &str = r.get("direction");
+                if let Ok(r) = pg.query_one(ANCESTRAL_QUERY, &[&protein_name]) {
+                    let gene_name: &str = r.get("name");
+                    let ancestral_name: &str = r.get("ancestral");
+                    let species: &str = r.get("species");
+                    let chr: &str = r.get("chr");
+                    let pos: i32 = r.get("start");
+                    let direction: &str = r.get("direction");
 
-                let proto_lefts = pg
-                    .query(LEFTS_QUERY, &[&species, &chr, &pos, &WINDOW])
-                    .unwrap()
-                    .into_iter()
-                    .map(|row| {
-                        let ancestral: String = row.get("ancestral");
-                        let direction: String = row.get("direction");
-                        (ancestral, direction)
-                    })
-                    .collect::<Vec<_>>();
-                let proto_rights = pg
-                    .query(RIGHTS_QUERY, &[&species, &chr, &pos, &WINDOW])
-                    .unwrap()
-                    .into_iter()
-                    .map(|row| {
-                        let ancestral: String = row.get("ancestral");
-                        let direction: String = row.get("direction");
-                        (ancestral, direction)
-                    })
-                    .collect::<Vec<_>>();
-                let (lefts, rights) = if direction == "+" {
-                    (proto_lefts, proto_rights)
+                    let proto_lefts = pg
+                        .query(LEFTS_QUERY, &[&species, &chr, &pos, &WINDOW])
+                        .unwrap()
+                        .into_iter()
+                        .map(|row| {
+                            let ancestral: String = row.get("ancestral");
+                            let direction: String = row.get("direction");
+                            (ancestral, direction)
+                        })
+                        .collect::<Vec<_>>();
+                    let proto_rights = pg
+                        .query(RIGHTS_QUERY, &[&species, &chr, &pos, &WINDOW])
+                        .unwrap()
+                        .into_iter()
+                        .map(|row| {
+                            let ancestral: String = row.get("ancestral");
+                            let direction: String = row.get("direction");
+                            (ancestral, direction)
+                        })
+                        .collect::<Vec<_>>();
+                    let (lefts, rights) = if direction == "+" {
+                        (proto_lefts, proto_rights)
+                    } else {
+                        (proto_rights, proto_lefts)
+                    };
+
+                    // Gene/protein name
+                    svg.text()
+                        .pos(depth, y + 5.)
+                        .text(format!("{} {}/{}", protein_name, species, chr))
+                        .style(|s| s.fill_color(name2color(species)));
+
+                    // Left tail
+                    let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
+                    for (k, g) in lefts.iter().enumerate() {
+                        let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
+                        draw_gene(svg, xstart, y, g.1 == "+", name2color(&g.0));
+                    }
+
+                    // The Gene
+                    draw_gene(
+                        svg,
+                        xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
+                        y,
+                        true,
+                        name2color(&ancestral_name),
+                    )
+                    .style(|s| {
+                        s.stroke_width(2.)
+                            .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                    });
+
+                    // Right tail
+                    let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
+                    for (k, g) in rights.iter().enumerate() {
+                        let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
+                        draw_gene(svg, xstart, y, g.1 == "+", name2color(&g.0));
+                    }
+                    links.push((
+                        lefts.iter().map(|x| x.0.clone()).collect(),
+                        ancestral_name.into(),
+                        rights.iter().map(|x| x.0.clone()).collect(),
+                    ));
                 } else {
-                    (proto_rights, proto_lefts)
-                };
-
-                // Gene/protein name
-                svg.text()
-                    .pos(depth, y + 5.)
-                    .text(format!("{} {}/{}", protein_name, species, chr))
-                    .style(|s| s.fill_color(name2color(species)));
-
-                // Left tail
-                let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
-                for (k, g) in lefts.iter().enumerate() {
-                    let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                    draw_gene(svg, xstart, y, g.1 == "+", name2color(&g.0));
+                    // The node was not found in the database
+                    eprintln!("{} not found", name);
+                    links.push((Vec::new(), name.into(), Vec::new()));
                 }
-
-                // The Gene
-                draw_gene(
-                    svg,
-                    xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
-                    y,
-                    true,
-                    name2color(&ancestral_name),
-                )
-                .style(|s| {
-                    s.stroke_width(2.)
-                        .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                });
-
-                // Right tail
-                let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
-                for (k, g) in rights.iter().enumerate() {
-                    let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                    draw_gene(svg, xstart, y, g.1 == "+", name2color(&g.0));
-                }
-                links.push((
-                    lefts.iter().map(|x| x.0.clone()).collect(),
-                    ancestral_name.into(),
-                    rights.iter().map(|x| x.0.clone()).collect(),
-                ));
-            } else {
+            } else { // The node does not have a name
             }
             y += 20.;
         } else {
@@ -346,7 +351,7 @@ fn process_file(filename: &str) {
     draw_links(&mut svg, &links, 50.0, xlabels);
     svg.auto_fit();
 
-    let mut out = File::create("out.svg").unwrap();
+    let mut out = File::create(&format!("{}.svg", filename)).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();
 }
 
@@ -354,12 +359,13 @@ fn main() {
     let args = App::new("Genominicus")
         .version(clap::crate_version!())
         .author(clap::crate_authors!())
-        .arg(Arg::with_name("FILE")
-             .help("Sets the input file to use")
-             .required(true)
-             .multiple(true))
-        .get_matches()
-        ;
+        .arg(
+            Arg::with_name("FILE")
+                .help("Sets the input file to use")
+                .required(true)
+                .multiple(true),
+        )
+        .get_matches();
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
         process_file(filename);
