@@ -44,17 +44,16 @@ fn drawDs(
             let d = xoffset / depth;
             svg.push(Box::new(
                 Polygon::from_pos_dims(
-                    xoffset + BRANCH_WIDTH / 2., y - 6.,
-                    width - xoffset - d * BRANCH_WIDTH, new_y - y - 6.,
+                    xoffset + BRANCH_WIDTH / 2.,
+                    y - 6.,
+                    width - xoffset - d * BRANCH_WIDTH,
+                    new_y - y - 6.,
                 )
                 .style(|s| {
                     s.fill_color(StyleColor::Percent(0.5, 0.5, 1.))
                         .fill_opacity(0.1 + 0.9 * d)
                 }),
             ));
-        }
-        if child.is_leaf() {
-            svg.push(Box::new(Text::from_pos(depth, y+5.).text(&child.name.as_ref().unwrap_or(&"".into()))));
         }
         y = new_y;
     }
@@ -68,7 +67,7 @@ fn main() {
     .unwrap();
     t.print();
 
-    let depth = 280.;//BRANCH_WIDTH * (t.topological_depth().1 + 1.);
+    let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
         .leaf_names()
         .iter()
@@ -78,17 +77,14 @@ fn main() {
         * FONT_SIZE;
     let xlabels = 0.85 * (10. + depth + longest_name + 50.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
-    let height = 20. * (t.leaves().count() as f32 + 2.) + 20.;
-    dbg!(longest_name);
-    dbg!(xlabels);
-    dbg!(width);
-    dbg!(height);
-    dbg!(depth);
-    let mut svg = SvgDrawing::with_size(width as usize, height as usize);
+    let mut svg = SvgDrawing::new();
     svg.push(Box::new(
         Text::new().pos(FONT_SIZE, FONT_SIZE).text("Title"),
     ));
+
     drawDs(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
+    svg.auto_fit();
+
     let mut out = File::create("out.svg").unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();
 }

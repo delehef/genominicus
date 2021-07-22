@@ -8,7 +8,8 @@ pub struct NhxParser;
 
 #[derive(Debug)]
 pub struct Node {
-    pub name: Option<String>, parent: usize,
+    pub name: Option<String>,
+    parent: usize,
     children: Vec<usize>,
     length: Option<f32>,
     data: HashMap<String, String>,
@@ -80,7 +81,7 @@ impl Tree {
 
             pair.into_inner().for_each(|inner| match inner.as_rule() {
                 Rule::Leaf | Rule::Clade => {
-                    let child = parse_node(inner, 0, storage);
+                    let child = parse_node(inner, my_id, storage);
                     storage[my_id].children.push(child);
                 }
                 Rule::name => {
@@ -124,7 +125,7 @@ impl Tree {
     }
 
     pub fn node_topological_depth(&self, n: usize) -> f32 {
-        let mut depth = 1.;
+        let mut depth = 0.;
         let mut parent = self.nodes[n].parent;
         while parent != 0 {
             depth += 1.;
