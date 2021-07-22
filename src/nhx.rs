@@ -10,7 +10,7 @@ pub struct NhxParser;
 pub struct Node {
     pub name: Option<String>,
     parent: usize,
-    children: Vec<usize>,
+    pub children: Vec<usize>,
     length: Option<f32>,
     data: HashMap<String, String>,
 }

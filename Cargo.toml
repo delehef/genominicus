@@ -12,3 +12,5 @@ pest = "2"
 pest_derive = "2"
 smartstring = "0.2"
 svarog = { path = "../svarog" }
+md5 = "0.7"
+postgres = "0.19"
