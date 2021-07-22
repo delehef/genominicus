@@ -42,7 +42,7 @@ pub struct Tree {
 }
 impl Tree {
     pub fn print(&self) {
-        fn print_node(nodes: &Vec<Node>, n: usize, o: usize) {
+        fn print_node(nodes: &[Node], n: usize, o: usize) {
             println!(
                 "{}{}:{:?} - {:?}",
                 str::repeat(" ", o),

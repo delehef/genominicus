@@ -1,7 +1,9 @@
 use crate::nhx::*;
+use clap::*;
 use postgres::{Client, NoTls};
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::Path;
 use svarog::*;
 
 const WINDOW: i64 = 15;
@@ -265,7 +267,7 @@ fn draw_tree(
 
 fn draw_links(
     svg: &mut SvgDrawing,
-    links: &Vec<(Vec<String>, String, Vec<String>)>,
+    links: &[(Vec<String>, String, Vec<String>)],
     yoffset: f32,
     xlabels: f32,
 ) {
@@ -292,7 +294,6 @@ fn draw_links(
             }
         }
 
-
         let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
         for (i, ancestral) in w[0].2.iter().enumerate() {
             let x1 = xbase + i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
@@ -318,11 +319,9 @@ fn draw_links(
     }
 }
 
-fn main() {
-    let t = Tree::from_filename(
-        "/home/franklin/work/duplications/done/prims_065/final_trees/76-profilenj.nhx",
-    )
-    .unwrap();
+fn process_file(filename: &str) {
+    println!("Processing {}", filename);
+    let t = Tree::from_filename(filename).unwrap();
 
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
@@ -335,7 +334,9 @@ fn main() {
     let xlabels = 0.85 * (10. + depth + longest_name + 50.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
-    svg.text().pos(FONT_SIZE, FONT_SIZE).text("Title");
+    svg.text()
+        .pos(FONT_SIZE, FONT_SIZE)
+        .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
     draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
     let mut links = Vec::new();
@@ -347,4 +348,20 @@ fn main() {
 
     let mut out = File::create("out.svg").unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();
+}
+
+fn main() {
+    let args = App::new("Genominicus")
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .arg(Arg::with_name("FILE")
+             .help("Sets the input file to use")
+             .required(true)
+             .multiple(true))
+        .get_matches()
+        ;
+
+    for filename in values_t!(args, "FILE", String).unwrap().iter() {
+        process_file(filename);
+    }
 }
