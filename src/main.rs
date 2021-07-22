@@ -1,3 +1,4 @@
+use colorsys::{Rgb, Hsl};
 use crate::nhx::*;
 use clap::*;
 use postgres::{Client, NoTls};
@@ -80,9 +81,19 @@ fn draw_background(
 
 fn name2color<S: AsRef<str>>(name: S) -> StyleColor {
     let bytes: [u8; 16] = md5::compute(name.as_ref().as_bytes()).into();
-    let r = (bytes[0] as f32 / 255.).clamp(0.1, 0.8);
-    let g = (bytes[1] as f32 / 255.).clamp(0.1, 0.8);
-    let b = (bytes[2] as f32 / 255.).clamp(0.1, 0.8);
+    let rgb = Rgb::from((bytes[0] as f32, bytes[1] as f32, bytes[2] as f32));
+
+    let mut hsl: Hsl = rgb.into();
+    hsl.set_lightness(hsl.lightness().clamp(30., 40.));
+
+    let rgb: Rgb = hsl.into();
+    StyleColor::Percent(rgb.red() as f32/255., rgb.green() as f32/255., rgb.blue() as f32/255.)
+}
+fn gene2color<S: AsRef<str>>(name: S) -> StyleColor {
+    let bytes: [u8; 16] = md5::compute(name.as_ref().as_bytes()).into();
+    let r = (bytes[0] as f32 / 255.).clamp(0.1, 0.9);
+    let g = (bytes[1] as f32 / 255.).clamp(0.1, 0.9);
+    let b = (bytes[2] as f32 / 255.).clamp(0.1, 0.9);
     StyleColor::Percent(r, g, b)
 }
 
@@ -209,7 +220,7 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in lefts.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == "+", name2color(&g.0));
+                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0));
                     }
 
                     // The Gene
@@ -218,7 +229,7 @@ fn draw_tree(
                         xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
                         y,
                         true,
-                        name2color(&ancestral_name),
+                        gene2color(&ancestral_name),
                     )
                     .style(|s| {
                         s.stroke_width(2.)
@@ -229,7 +240,7 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in rights.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == "+", name2color(&g.0));
+                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0));
                     }
                     links.push((
                         lefts.iter().map(|x| x.0.clone()).collect(),
