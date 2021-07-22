@@ -1,5 +1,5 @@
-use std::{collections::HashMap, usize};
 use pest::Parser;
+use std::{collections::HashMap, usize};
 
 use pest_derive::Parser;
 #[derive(Parser)]
@@ -8,8 +8,7 @@ pub struct NhxParser;
 
 #[derive(Debug)]
 pub struct Node {
-    name: Option<String>,
-    parent: usize,
+    pub name: Option<String>, parent: usize,
     children: Vec<usize>,
     length: Option<f32>,
     data: HashMap<String, String>,
@@ -24,20 +23,31 @@ impl Node {
             data: HashMap::new(),
         }
     }
+
+    pub fn is_duplication(&self) -> bool {
+        self.data.get("D").map_or(false, |d| d == "Y")
+    }
+
+    pub fn children(&self) -> &[usize] {
+        &self.children
+    }
+    pub fn is_leaf(&self) -> bool {
+        self.children.is_empty()
+    }
 }
 
 pub struct Tree {
     nodes: Vec<Node>,
 }
-
 impl Tree {
     pub fn print(&self) {
         fn print_node(nodes: &Vec<Node>, n: usize, o: usize) {
-            println!("{}{}:{:?} - {:?}",
-                     str::repeat(" ", o),
-                     &nodes[n].name.as_ref().unwrap_or(&String::new()),
-                     &nodes[n].length.unwrap_or(-1.),
-                     &nodes[n].data
+            println!(
+                "{}{}:{:?} - {:?}",
+                str::repeat(" ", o),
+                &nodes[n].name.as_ref().unwrap_or(&String::new()),
+                &nodes[n].length.unwrap_or(-1.),
+                &nodes[n].data
             );
             for &c in &nodes[n].children {
                 print_node(nodes, c, o + 2)
@@ -51,9 +61,7 @@ impl Tree {
 
         fn parse_attrs(pair: Pair<Rule>, me: &mut Node) {
             match pair.as_rule() {
-                Rule::float => {
-                    me.length = Some(pair.as_str().parse::<f32>().unwrap())
-                }
+                Rule::float => me.length = Some(pair.as_str().parse::<f32>().unwrap()),
                 Rule::NhxEntry => {
                     let mut kv = pair.into_inner();
                     let k = kv.next().unwrap().as_str().to_owned();
@@ -70,22 +78,20 @@ impl Tree {
             let my_id = storage.len();
             storage.push(Node::new(parent));
 
-            pair.into_inner().for_each(|inner|  {
-                match inner.as_rule() {
-                    Rule::Leaf | Rule::Clade => {
-                        let child = parse_node(inner, 0, storage);
-                        storage[my_id].children.push(child);
-                    }
-                    Rule::name => {
-                        storage[my_id].name = Some(inner.as_str().to_owned());
-                    }
-                    Rule::Attributes => {
-                        for attr in inner.into_inner() {
-                            parse_attrs(attr, &mut storage[my_id])
-                        }
-                    }
-                    _ => unimplemented!()
+            pair.into_inner().for_each(|inner| match inner.as_rule() {
+                Rule::Leaf | Rule::Clade => {
+                    let child = parse_node(inner, 0, storage);
+                    storage[my_id].children.push(child);
                 }
+                Rule::name => {
+                    storage[my_id].name = Some(inner.as_str().to_owned());
+                }
+                Rule::Attributes => {
+                    for attr in inner.into_inner() {
+                        parse_attrs(attr, &mut storage[my_id])
+                    }
+                }
+                _ => unimplemented!(),
             });
 
             my_id
@@ -95,11 +101,58 @@ impl Tree {
 
         let mut r = Vec::new();
         let _ = parse_node(root, 0, &mut r);
-        Ok(Tree{ nodes: r })
+        Ok(Tree { nodes: r })
     }
 
     pub fn from_filename(filename: &str) -> Result<Self, pest::error::Error<Rule>> {
         let content = std::fs::read_to_string(filename).expect("cannot read file");
         Self::from_string(&content)
+    }
+
+    pub fn depth(&self) -> f32 {
+        todo!()
+    }
+
+    pub fn node_depth(&self, n: usize) -> f32 {
+        let mut depth = self.nodes[n].length.unwrap();
+        let mut parent = self.nodes[n].parent;
+        while parent != 0 {
+            depth += self.nodes[parent].length.unwrap();
+            parent = self.nodes[parent].parent;
+        }
+        depth
+    }
+
+    pub fn node_topological_depth(&self, n: usize) -> f32 {
+        let mut depth = 1.;
+        let mut parent = self.nodes[n].parent;
+        while parent != 0 {
+            depth += 1.;
+            parent = self.nodes[parent].parent;
+        }
+        depth
+    }
+
+    pub fn topological_depth(&self) -> (usize, f32) {
+        self.leaves()
+            .map(|n| (n, self.node_topological_depth(n)))
+            .max_by(|x, y| x.1.partial_cmp(&y.1).unwrap())
+            .unwrap()
+    }
+
+    pub fn leaves<'a>(&'a self) -> impl Iterator<Item = usize> + 'a {
+        (0..self.nodes.len()).filter(move |n| self.nodes[*n].children.is_empty())
+    }
+
+    pub fn leaf_names(&self) -> Vec<(usize, Option<&String>)> {
+        self.leaves()
+            .map(|n| (n, self.nodes[n].name.as_ref()))
+            .collect()
+    }
+}
+impl std::ops::Index<usize> for Tree {
+    type Output = Node;
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.nodes[i]
     }
 }
