@@ -8,6 +8,7 @@ pub struct NhxParser;
 
 #[derive(Debug)]
 pub struct Node {
+    pub id: usize,
     pub name: Option<String>,
     parent: usize,
     pub children: Vec<usize>,
@@ -15,8 +16,9 @@ pub struct Node {
     data: HashMap<String, String>,
 }
 impl Node {
-    pub fn new(parent: usize) -> Self {
+    pub fn new(parent: usize, id: usize) -> Self {
         Node {
+            id,
             name: None,
             parent,
             children: Vec::new(),
@@ -57,6 +59,41 @@ impl Tree {
         print_node(&self.nodes, 0, 0);
     }
 
+    pub fn d_descendants(&self, n: usize) -> Vec<usize> {
+        fn find_dups(t: &Tree, n: usize, ax: &mut Vec<usize>) {
+            if t[n].is_duplication() {
+                ax.push(t[n].id);
+            } else {
+                for &c in t[n].children.iter() {
+                    find_dups(t, c, ax);
+                }
+            }
+        }
+
+        let mut r = vec![];
+        for &c in self[n].children.iter() {
+            find_dups(self, c, &mut r);
+        }
+        r
+    }
+
+    pub fn non_d_descendants(&self, n: usize) -> Vec<usize> {
+        fn find_leaves(t: &Tree, n: usize, ax: &mut Vec<usize>) {
+            if !t[n].is_duplication() {
+                if t[n].is_leaf() {
+                    ax.push(t[n].id);
+                }
+                for &c in t[n].children.iter() {
+                    find_leaves(t, c, ax);
+                }
+            }
+        }
+
+        let mut r = vec![];
+        find_leaves(self, n, &mut r);
+        r
+    }
+
     pub fn from_string(content: &str) -> Result<Self, pest::error::Error<Rule>> {
         use pest::iterators::Pair;
 
@@ -77,7 +114,7 @@ impl Tree {
 
         fn parse_node(pair: Pair<Rule>, parent: usize, storage: &mut Vec<Node>) -> usize {
             let my_id = storage.len();
-            storage.push(Node::new(parent));
+            storage.push(Node::new(parent, my_id));
 
             pair.into_inner().for_each(|inner| match inner.as_rule() {
                 Rule::Leaf | Rule::Clade => {

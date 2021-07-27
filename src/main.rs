@@ -1,11 +1,20 @@
-use colorsys::{Rgb, Hsl};
 use crate::nhx::*;
+use Direction::{Incoming, Outgoing};
+use bimap::BiMap;
 use clap::*;
+use colorsys::{Hsl, Rgb};
+use petgraph::dot::{Config, Dot};
+use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
+use petgraph::Direction;
 use postgres::{Client, NoTls};
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use svarog::*;
+mod nhx;
+mod poa;
 
 const WINDOW: i64 = 15;
 const GENE_WIDTH: f32 = 15.;
@@ -19,17 +28,64 @@ const ANCESTRAL_QUERY: &str = concat!(
     "(select parent from annotations where name=(select parent from annotations where name=$1 limit 1))"
 );
 const LEFTS_QUERY: &str = concat!(
-    "select coalesce(ancestral, 'NA') as ancestral, direction from ",
+    "select coalesce(ancestral, concat($1, ':', $2, ':', $3)) as ancestral, direction from ",
     "(select * from annotations left join mapping on name=modern where ",
     "annotations.species=$1 and chr=$2 and type='gene' and start<$3 order by start desc) as x limit $4"
 );
 const RIGHTS_QUERY: &str = concat!(
-    "select coalesce(ancestral, 'NA') as ancestral, direction from ",
+    "select coalesce(ancestral, concat($1, ':', $2, ':', $3)) as ancestral, direction from ",
     "(select * from annotations left join mapping on name=modern where ",
     "annotations.species=$1 and chr=$2 and type='gene' and start>$3 order by start asc) as x limit $4"
 );
 
-mod nhx;
+fn left_tail(
+    db: &mut Client,
+    species: &str,
+    chr: &str,
+    pos: i32,
+    span: i64,
+) -> Vec<(String, char)> {
+    db.query(LEFTS_QUERY, &[&species, &chr, &pos, &WINDOW])
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            let ancestral: String = row.get("ancestral");
+            let direction: char = row.get::<_, String>("direction").chars().next().unwrap();
+            (ancestral, direction)
+        })
+        .collect::<Vec<_>>()
+}
+
+fn right_tail(
+    db: &mut Client,
+    species: &str,
+    chr: &str,
+    pos: i32,
+    span: i64,
+) -> Vec<(String, char)> {
+    db.query(RIGHTS_QUERY, &[&species, &chr, &pos, &WINDOW])
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            let ancestral: String = row.get("ancestral");
+            let direction: char = row.get::<_, String>("direction").chars().next().unwrap();
+            (ancestral, direction)
+        })
+        .collect::<Vec<_>>()
+}
+
+fn tails(
+    db: &mut Client,
+    species: &str,
+    chr: &str,
+    pos: i32,
+    span: i64,
+) -> (Vec<(String, char)>, Vec<(String, char)>) {
+    (
+        left_tail(db, species, chr, pos, span),
+        right_tail(db, species, chr, pos, span),
+    )
+}
 
 fn draw_background(
     svg: &mut SvgDrawing,
@@ -87,7 +143,11 @@ fn name2color<S: AsRef<str>>(name: S) -> StyleColor {
     hsl.set_lightness(hsl.lightness().clamp(30., 40.));
 
     let rgb: Rgb = hsl.into();
-    StyleColor::Percent(rgb.red() as f32/255., rgb.green() as f32/255., rgb.blue() as f32/255.)
+    StyleColor::Percent(
+        rgb.red() as f32 / 255.,
+        rgb.green() as f32 / 255.,
+        rgb.blue() as f32 / 255.,
+    )
 }
 fn gene2color<S: AsRef<str>>(name: S) -> StyleColor {
     let bytes: [u8; 16] = md5::compute(name.as_ref().as_bytes()).into();
@@ -95,6 +155,34 @@ fn gene2color<S: AsRef<str>>(name: S) -> StyleColor {
     let g = (bytes[1] as f32 / 255.).clamp(0.1, 0.9);
     let b = (bytes[2] as f32 / 255.).clamp(0.1, 0.9);
     StyleColor::Percent(r, g, b)
+}
+
+fn draw_gene(svg: &mut SvgDrawing, x: f32, y: f32, right: bool, color: StyleColor) -> &mut Polygon {
+    if right {
+        svg.polygon()
+            .add_point(x, y - 5.)
+            .add_point(x + GENE_WIDTH - 3., y - 5.)
+            .add_point(x + GENE_WIDTH, y)
+            .add_point(x + GENE_WIDTH - 3., y + 5.)
+            .add_point(x, y + 5.)
+            .style(|s| {
+                s.fill_color(color)
+                    .stroke_width(0.5)
+                    .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
+            })
+    } else {
+        svg.polygon()
+            .add_point(x, y)
+            .add_point(x + 3., y - 5.)
+            .add_point(x + GENE_WIDTH, y - 5.)
+            .add_point(x + GENE_WIDTH, y + 5.)
+            .add_point(x + 3., y + 5.)
+            .style(|s| {
+                s.fill_color(color)
+                    .stroke_width(0.5)
+                    .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
+            })
+    }
 }
 
 fn draw_tree(
@@ -108,42 +196,8 @@ fn draw_tree(
     width: f32,
     links: &mut Vec<(Vec<String>, String, Vec<String>)>,
 ) -> f32 {
-    fn draw_gene(
-        svg: &mut SvgDrawing,
-        x: f32,
-        y: f32,
-        right: bool,
-        color: StyleColor,
-    ) -> &mut Polygon {
-        if right {
-            svg.polygon()
-                .add_point(x, y - 5.)
-                .add_point(x + GENE_WIDTH - 3., y - 5.)
-                .add_point(x + GENE_WIDTH, y)
-                .add_point(x + GENE_WIDTH - 3., y + 5.)
-                .add_point(x, y + 5.)
-                .style(|s| {
-                    s.fill_color(color)
-                        .stroke_width(0.5)
-                        .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
-                })
-        } else {
-            svg.polygon()
-                .add_point(x, y)
-                .add_point(x + 3., y - 5.)
-                .add_point(x + GENE_WIDTH, y - 5.)
-                .add_point(x + GENE_WIDTH, y + 5.)
-                .add_point(x + 3., y + 5.)
-                .style(|s| {
-                    s.fill_color(color)
-                        .stroke_width(0.5)
-                        .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
-                })
-        }
-    }
-
     let mut pg = Client::connect(
-        "host=localhost user=franklin dbname=duplications",
+        "host=localhost user=franklin dbname=duplications password='notanumber'",
         NoTls,
     )
     .unwrap();
@@ -213,7 +267,7 @@ fn draw_tree(
                     // Gene/protein name
                     svg.text()
                         .pos(depth, y + 5.)
-                        .text(format!("{} {}/{}", protein_name, species, chr))
+                        .text(format!("{} {} {}/{}", child.id, protein_name, species, chr))
                         .style(|s| s.fill_color(name2color(species)));
 
                     // Left tail
@@ -335,6 +389,249 @@ fn draw_links(
     }
 }
 
+fn draw_clustered(
+    svg: &mut SvgDrawing,
+    depth: f32,
+    tree: &Tree,
+    node: &Node,
+    xoffset: f32,
+    yoffset: f32,
+    xlabels: f32,
+    width: f32,
+) -> f32 {
+    let mut y = yoffset;
+    if node.is_duplication() {
+        assert!(node.children().len() == 2);
+
+        svg.line()
+            .from_coords(xoffset, y, xoffset + 2. * BRANCH_WIDTH, y)
+            .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+
+        // Left arm
+        let old_y = y;
+        y = draw_clustered(
+            svg,
+            depth,
+            tree,
+            &tree[node.children()[0]],
+            xoffset + 2. * BRANCH_WIDTH,
+            y,
+            xlabels,
+            width,
+        );
+
+        // Vertical rake
+        svg.line()
+            .from_coords(xoffset + BRANCH_WIDTH, old_y, xoffset + BRANCH_WIDTH, y)
+            .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+
+        // Right arm
+        svg.line()
+            .from_coords(xoffset + BRANCH_WIDTH, y, xoffset + 2. * BRANCH_WIDTH, y)
+            .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+        y = draw_clustered(
+            svg,
+            depth,
+            tree,
+            &tree[node.children()[1]],
+            xoffset + 2. * BRANCH_WIDTH,
+            y,
+            xlabels,
+            width,
+        );
+        // The little red square
+        svg.polygon()
+            .from_pos_dims(BRANCH_WIDTH + xoffset - 3., yoffset - 3., 6., 6.)
+            .style(|s| s.fill_color(StyleColor::Percent(0.8, 0., 0.)));
+    } else {
+        let leaves = tree.non_d_descendants(node.id);
+        let dups = tree.d_descendants(node.id);
+        let mut pg = Client::connect(
+            "host=localhost user=franklin dbname=duplications password='notanumber'",
+            NoTls,
+        )
+        .unwrap();
+
+        let old_y = y;
+        for &child in dups.iter() {
+            svg.line()
+                .from_coords(xoffset, y, xoffset + BRANCH_WIDTH, y)
+                .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+            y = draw_clustered(
+                svg,
+                depth,
+                tree,
+                &tree[child],
+                xoffset + BRANCH_WIDTH,
+                y,
+                xlabels,
+                width,
+            );
+        }
+
+        let mut tails = leaves
+            .iter()
+            .filter_map(|&l| {
+                if let Some(name) = &tree[l].name {
+                    let protein_name = name.split('_').next().unwrap();
+                    if let Ok(r) = pg.query_one(ANCESTRAL_QUERY, &[&protein_name]) {
+                        let gene_name: &str = r.get("name");
+                        let ancestral_name: &str = r.get("ancestral");
+                        let species: &str = r.get("species");
+                        let chr: &str = r.get("chr");
+                        let pos: i32 = r.get("start");
+                        let direction: char = r.get::<_, &str>("direction").chars().next().unwrap();
+                        let (mut left, mut right) = tails(&mut pg, species, chr, pos, WINDOW);
+
+                        Some((left, right))
+                    } else {
+                        // The node was not found in the database
+                        eprintln!("{} not found", name);
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if tails.is_empty() {
+            eprintln!("EMPTY");
+        } else {
+            let mut _lefts = tails.iter().map(|t| t.0.clone()).collect::<Vec<_>>();
+            let mut _rights = tails.into_iter().map(|t| t.1).collect::<Vec<_>>();
+            _lefts.sort_by(|x, y| x.len().cmp(&y.len()));
+            _rights.sort_by(|x, y| x.len().cmp(&y.len()));
+
+            let mut lefts = vec![_lefts[0].clone()];
+            lefts[0].push(("FINAL".to_owned(), '+'));
+            let mut rights = vec![_rights[0].clone()];
+            rights[0].insert(0, ("FINAL".to_owned(), '+'));
+            let left_set = lefts[0]
+                .iter()
+                .map(|g| g.0.to_owned())
+                .collect::<HashSet<String>>();
+            let right_set = lefts[0]
+                .iter()
+                .map(|g| g.0.to_owned())
+                .collect::<HashSet<String>>();
+
+            for (mut l, mut r) in _lefts.into_iter().skip(1).zip(_rights.into_iter().skip(1)) {
+                let l_set = l.iter().map(|g| g.0.to_owned()).collect::<HashSet<_>>();
+                let r_set = r.iter().map(|g| g.0.to_owned()).collect::<HashSet<_>>();
+                if l_set.len() > r_set.len() {
+                    if l_set.intersection(&left_set).collect::<Vec<_>>().len()
+                        > l_set.intersection(&right_set).collect::<Vec<_>>().len()
+                    {
+                        l.push(("FINAL".to_owned(), '+'));
+                        lefts.push(l);
+                        r.insert(0, ("FINAL".to_owned(), '+'));
+                        rights.push(r);
+                    } else {
+                        r.reverse();
+                        r.push(("FINAL".to_owned(), '+'));
+                        lefts.push(r);
+
+                        l.reverse();
+                        l.insert(0, ("FINAL".to_owned(), '+'));
+                        rights.push(l);
+                    }
+                } else {
+                    if r_set.intersection(&right_set).collect::<Vec<_>>().len()
+                        > l_set.intersection(&left_set).collect::<Vec<_>>().len()
+                    {
+                        l.push(("FINAL".to_owned(), '+'));
+                        lefts.push(l);
+                        r.insert(0, ("FINAL".to_owned(), '+'));
+                        rights.push(r);
+                    } else {
+                        r.reverse();
+                        r.push(("FINAL".to_owned(), '+'));
+                        lefts.push(r);
+
+                        l.reverse();
+                        l.insert(0, ("FINAL".to_owned(), '+'));
+                        rights.push(l);
+                    }
+                }
+            }
+            let mut xbase = xlabels;
+            for (k, tail) in [lefts].iter().enumerate() {
+                let mut g = DiGraph::<String, i64>::new();
+                let mut nodes = BiMap::new();
+                let mut all_names = tail
+                    .iter()
+                    .flat_map(|t| t.iter().map(|g| g.0.to_owned()))
+                    .collect::<HashSet<_>>();
+                all_names.drain().for_each(|name| {
+                    nodes.insert(name.clone(), g.add_node(name.to_owned()));
+                });
+
+                tail.iter().for_each(|t| {
+                    t.windows(2).for_each(|xs| {
+                        let x = nodes.get_by_left(&xs[0].0).unwrap();
+                        let y = nodes.get_by_left(&xs[1].0).unwrap();
+                        if *x != *y {
+                            if let Some(ix) = g.find_edge(*x, *y) {
+                                g.update_edge(*x, *y, g.edge_weight(ix).unwrap() + 1);
+                            } else if let Some(ix) = g.find_edge(*y, *x) {
+                                g.add_edge(*y, *x, g.edge_weight(ix).unwrap() + 1);
+                            } else {
+                                g.add_edge(*x, *y, 1);
+                            }
+                        }
+                    })
+                });
+
+
+                File::create(format!("g-{}-{}.dot", node.id, k))
+                    .unwrap()
+                    .write_all(Dot::with_config(&g, &[]).to_string().as_bytes())
+                    .unwrap();
+                let sources = g.node_indices().filter(|n| {
+                    g.neighbors_directed(*n, Direction::Incoming)
+                        .collect::<Vec<_>>()
+                        .is_empty()
+                });
+                let sinks = g.node_indices().filter(|n| {
+                    g.neighbors_directed(*n, Direction::Outgoing)
+                        .collect::<Vec<_>>()
+                        .is_empty()
+                });
+
+                let draw_path = |n: NodeIndex| {};
+
+                let mut x = xbase;
+                for n in sources {
+                    // let (x_end, y_end) = draw_path(n);
+                }
+            }
+            y += 20.;
+
+            for child in leaves.iter().map(|i| &tree[*i]) {
+                // Leaf branch
+                svg.line()
+                    .from_coords(xoffset, y, depth, y)
+                    .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+
+                // Landscape support line
+                svg.line()
+                    .start(xlabels - 5., y)
+                    .end(
+                        xlabels + (GENE_WIDTH + GENE_SPACING) * (2. * WINDOW as f32 + 1.)
+                            - GENE_SPACING
+                            + 5.,
+                        y,
+                    )
+                    .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+            }
+            svg.line()
+                .from_coords(xoffset, old_y, xoffset, y - 20.)
+                .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
+        }
+    }
+    y
+}
+
 fn process_file(filename: &str) {
     println!("Processing {}", filename);
     let t = Tree::from_filename(filename).unwrap();
@@ -354,12 +651,13 @@ fn process_file(filename: &str) {
         .pos(FONT_SIZE, FONT_SIZE)
         .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
-    draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
-    let mut links = Vec::new();
-    draw_tree(
-        &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
-    );
-    draw_links(&mut svg, &links, 50.0, xlabels);
+    // draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
+    // let mut links = Vec::new();
+    // draw_tree(
+    //     &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+    // );
+    // draw_links(&mut svg, &links, 50.0, xlabels);
+    draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
     svg.auto_fit();
 
     let mut out = File::create(&format!("{}.svg", filename)).unwrap();
