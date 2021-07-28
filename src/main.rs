@@ -1,20 +1,34 @@
 use crate::nhx::*;
-use Direction::{Incoming, Outgoing};
 use bimap::BiMap;
 use clap::*;
 use colorsys::{Hsl, Rgb};
-use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::Direction;
+use petgraph::{
+    dot::{Config, Dot},
+    visit::EdgeRef,
+};
+use poa::POA;
 use postgres::{Client, NoTls};
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
+use std::{collections::HashMap, usize};
 use svarog::*;
+use Direction::{Incoming, Outgoing};
 mod nhx;
+mod nw;
 mod poa;
+
+pub type SeqID = usize;
+pub type Nucleotide = String;
+pub type Sequence = Vec<Nucleotide>;
+pub type Sequences = HashMap<SeqID, Sequence>;
+
+fn nuc_to_str(nuc: &Nucleotide) -> String {
+    nuc.to_string()
+}
 
 const WINDOW: i64 = 15;
 const GENE_WIDTH: f32 = 15.;
@@ -157,7 +171,14 @@ fn gene2color<S: AsRef<str>>(name: S) -> StyleColor {
     StyleColor::Percent(r, g, b)
 }
 
-fn draw_gene(svg: &mut SvgDrawing, x: f32, y: f32, right: bool, color: StyleColor) -> &mut Polygon {
+fn draw_gene<'a>(
+    svg: &'a mut SvgDrawing,
+    x: f32,
+    y: f32,
+    right: bool,
+    color: StyleColor,
+    name: &str,
+) -> &'a mut Polygon {
     if right {
         svg.polygon()
             .add_point(x, y - 5.)
@@ -165,6 +186,7 @@ fn draw_gene(svg: &mut SvgDrawing, x: f32, y: f32, right: bool, color: StyleColo
             .add_point(x + GENE_WIDTH, y)
             .add_point(x + GENE_WIDTH - 3., y + 5.)
             .add_point(x, y + 5.)
+            .set_hover(name)
             .style(|s| {
                 s.fill_color(color)
                     .stroke_width(0.5)
@@ -177,6 +199,7 @@ fn draw_gene(svg: &mut SvgDrawing, x: f32, y: f32, right: bool, color: StyleColo
             .add_point(x + GENE_WIDTH, y - 5.)
             .add_point(x + GENE_WIDTH, y + 5.)
             .add_point(x + 3., y + 5.)
+            .set_hover(name)
             .style(|s| {
                 s.fill_color(color)
                     .stroke_width(0.5)
@@ -258,7 +281,7 @@ fn draw_tree(
                             (ancestral, direction)
                         })
                         .collect::<Vec<_>>();
-                    let (lefts, rights) = if direction == "+" {
+                    let (lefts, rights) = if true {
                         (proto_lefts, proto_rights)
                     } else {
                         (proto_rights, proto_lefts)
@@ -274,7 +297,7 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in lefts.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0));
+                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0), &g.0);
                     }
 
                     // The Gene
@@ -284,6 +307,7 @@ fn draw_tree(
                         y,
                         true,
                         gene2color(&ancestral_name),
+                        &ancestral_name,
                     )
                     .style(|s| {
                         s.stroke_width(2.)
@@ -294,7 +318,7 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in rights.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0));
+                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0), &g.0);
                     }
                     links.push((
                         lefts.iter().map(|x| x.0.clone()).collect(),
@@ -481,9 +505,18 @@ fn draw_clustered(
                         let chr: &str = r.get("chr");
                         let pos: i32 = r.get("start");
                         let direction: char = r.get::<_, &str>("direction").chars().next().unwrap();
-                        let (mut left, mut right) = tails(&mut pg, species, chr, pos, WINDOW);
+                        let (left, right) = tails(&mut pg, species, chr, pos, WINDOW);
+                        Some(
+                            left.iter()
+                                .map(|g| &g.0)
+                                .rev()
+                                .chain(["=======FINAL=======".to_owned()].iter())
+                                .chain(right.iter().map(|g| &g.0))
+                                .cloned()
+                                .collect::<Vec<String>>(),
+                        )
 
-                        Some((left, right))
+                        // Some((left, right))
                     } else {
                         // The node was not found in the database
                         eprintln!("{} not found", name);
@@ -497,138 +530,126 @@ fn draw_clustered(
         if tails.is_empty() {
             eprintln!("EMPTY");
         } else {
-            let mut _lefts = tails.iter().map(|t| t.0.clone()).collect::<Vec<_>>();
-            let mut _rights = tails.into_iter().map(|t| t.1).collect::<Vec<_>>();
-            _lefts.sort_by(|x, y| x.len().cmp(&y.len()));
-            _rights.sort_by(|x, y| x.len().cmp(&y.len()));
-
-            let mut lefts = vec![_lefts[0].clone()];
-            lefts[0].push(("FINAL".to_owned(), '+'));
-            let mut rights = vec![_rights[0].clone()];
-            rights[0].insert(0, ("FINAL".to_owned(), '+'));
-            let left_set = lefts[0]
+            let h_tails = tails
+                .into_iter()
+                .enumerate()
+                .collect::<HashMap<usize, Vec<String>>>();
+            let (g, starts) = nw::align(&h_tails);
+            let labels: HashMap<usize, String> = leaves
                 .iter()
-                .map(|g| g.0.to_owned())
-                .collect::<HashSet<String>>();
-            let right_set = lefts[0]
-                .iter()
-                .map(|g| g.0.to_owned())
-                .collect::<HashSet<String>>();
-
-            for (mut l, mut r) in _lefts.into_iter().skip(1).zip(_rights.into_iter().skip(1)) {
-                let l_set = l.iter().map(|g| g.0.to_owned()).collect::<HashSet<_>>();
-                let r_set = r.iter().map(|g| g.0.to_owned()).collect::<HashSet<_>>();
-                if l_set.len() > r_set.len() {
-                    if l_set.intersection(&left_set).collect::<Vec<_>>().len()
-                        > l_set.intersection(&right_set).collect::<Vec<_>>().len()
-                    {
-                        l.push(("FINAL".to_owned(), '+'));
-                        lefts.push(l);
-                        r.insert(0, ("FINAL".to_owned(), '+'));
-                        rights.push(r);
-                    } else {
-                        r.reverse();
-                        r.push(("FINAL".to_owned(), '+'));
-                        lefts.push(r);
-
-                        l.reverse();
-                        l.insert(0, ("FINAL".to_owned(), '+'));
-                        rights.push(l);
-                    }
-                } else {
-                    if r_set.intersection(&right_set).collect::<Vec<_>>().len()
-                        > l_set.intersection(&left_set).collect::<Vec<_>>().len()
-                    {
-                        l.push(("FINAL".to_owned(), '+'));
-                        lefts.push(l);
-                        r.insert(0, ("FINAL".to_owned(), '+'));
-                        rights.push(r);
-                    } else {
-                        r.reverse();
-                        r.push(("FINAL".to_owned(), '+'));
-                        lefts.push(r);
-
-                        l.reverse();
-                        l.insert(0, ("FINAL".to_owned(), '+'));
-                        rights.push(l);
-                    }
-                }
-            }
-            let mut xbase = xlabels;
-            for (k, tail) in [lefts].iter().enumerate() {
-                let mut g = DiGraph::<String, i64>::new();
-                let mut nodes = BiMap::new();
-                let mut all_names = tail
-                    .iter()
-                    .flat_map(|t| t.iter().map(|g| g.0.to_owned()))
-                    .collect::<HashSet<_>>();
-                all_names.drain().for_each(|name| {
-                    nodes.insert(name.clone(), g.add_node(name.to_owned()));
-                });
-
-                tail.iter().for_each(|t| {
-                    t.windows(2).for_each(|xs| {
-                        let x = nodes.get_by_left(&xs[0].0).unwrap();
-                        let y = nodes.get_by_left(&xs[1].0).unwrap();
-                        if *x != *y {
-                            if let Some(ix) = g.find_edge(*x, *y) {
-                                g.update_edge(*x, *y, g.edge_weight(ix).unwrap() + 1);
-                            } else if let Some(ix) = g.find_edge(*y, *x) {
-                                g.add_edge(*y, *x, g.edge_weight(ix).unwrap() + 1);
-                            } else {
-                                g.add_edge(*x, *y, 1);
-                            }
-                        }
-                    })
-                });
-
-
-                File::create(format!("g-{}-{}.dot", node.id, k))
+                .filter_map(|&l| tree[l].name.clone())
+                .enumerate()
+                .collect();
+            let xbase = xlabels;
+            if node.id == 5 {
+                let _ = File::create(&format!("poa-{}.dot", node.id))
                     .unwrap()
-                    .write_all(Dot::with_config(&g, &[]).to_string().as_bytes())
-                    .unwrap();
-                let sources = g.node_indices().filter(|n| {
-                    g.neighbors_directed(*n, Direction::Incoming)
-                        .collect::<Vec<_>>()
-                        .is_empty()
-                });
-                let sinks = g.node_indices().filter(|n| {
-                    g.neighbors_directed(*n, Direction::Outgoing)
-                        .collect::<Vec<_>>()
-                        .is_empty()
-                });
+                    .write_all(format!("{:?}", Dot::new(&g)).as_bytes());
 
-                let draw_path = |n: NodeIndex| {};
+                let mut ranks = HashMap::<NodeIndex, (usize, usize)>::new();
+                fn rank(
+                    g: &poa::POAGraph,
+                    n: NodeIndex,
+                    x: usize,
+                    y: usize,
+                    ranks: &mut HashMap<NodeIndex, (usize, usize)>,
+                ) {
+                    if !ranks.contains_key(&n) {
+                        ranks.insert(n, (x, y));
+                        for (k, o) in g.neighbors_directed(n, Outgoing).enumerate() {
+                            rank(g, o, x + 1, y + k, ranks);
+                        }
+                    }
+                }
+                for sink in g
+                    .node_indices()
+                    .filter(|n| g.neighbors_directed(*n, Incoming).next().is_none())
+                {
+                    dbg!(&g[sink]);
+                    let ny = rank(&g, sink, 0, 0, &mut ranks);
+                }
+                let xbase = xlabels;
+                for e in g.edge_references() {
+                    let (_x1, _y1) = *ranks.get(&e.source()).unwrap();
+                    let (_x2, _y2) = *ranks.get(&e.target()).unwrap();
+                    let x1 = std::cmp::min(_x1, _x2) as f32;
+                    let x2 = std::cmp::max(_x1, _x2) as f32;
+                    let y1 = std::cmp::min(_y1, _y2) as f32;
+                    let y2 = std::cmp::max(_y1, _y2) as f32;
 
-                let mut x = xbase;
-                for n in sources {
-                    // let (x_end, y_end) = draw_path(n);
+                    // if x1 - x2 == 1. {
+                    svg.line()
+                        .from_coords(
+                            xbase + x1 as f32 * 20. + 5.,
+                            y + y1 as f32 * 20. + 5.,
+                            xbase + x2 as f32 * 20. + 5.,
+                            y + y2 as f32 * 20. + 5.,
+                        )
+                        .style(|s| {
+                            s.stroke_color(StyleColor::RGB(0, 0, 0))
+                                .stroke_width(e.weight().len() as f32)
+                        });
+                    // } else {
+                    //     let dx = x1 as f32 - x2 as f32;
+                    //     let mid_y = y + if y2 != y1 {
+                    //         (y2 as f32 - y1 as f32)/2.
+                    //     } else {
+                    //         y2 as f32 + 10.
+                    //     };
+                    //     svg.line()
+                    //         .from_coords(
+                    //             xbase + x1 as f32 * 20. + 5.,
+                    //             y + y1 as f32 * 20. + 5.,
+                    //             xbase + x2 as f32 * 20. + 5.,
+                    //             y + y2 as f32 * 20. + 5.,
+                    //         )
+                    //         .style(|s| {
+                    //             s.stroke_color(StyleColor::RGB(0, 0, 0))
+                    //                 .stroke_width(e.weight().len() as f32)
+                    //         });
+                    //     // svg.polygon()
+                    //     //     .from_coords([
+                    //     //         (
+                    //     //             xbase + x1 as f32 * 20. + 5.,
+                    //     //             y + y1 as f32 * 20. + 5.,
+                    //     //         ),
+
+                    //     //         // (
+                    //     //         //     xbase + x1 as f32 * 20. + 5.,
+                    //     //         //     mid_y
+                    //     //         // ),
+                    //     //         // (
+                    //     //         //     xbase + x2 as f32 * 20. + 5.,
+                    //     //         //     mid_y
+                    //     //         // ),
+
+                    //     //         (
+                    //     //             xbase + x2 as f32 * 20. + 5.,
+                    //     //             y + y2 as f32 * 20. + 5.,
+                    //     //         ),
+                    //     //     ])
+                    //     //     .style(|s| {
+                    //     //         s.stroke_color(StyleColor::RGB(0, 0, 0))
+                    //     //             .stroke_width(e.weight().len() as f32)
+                    //     //             .fill_opacity(0.)
+                    //     //     });
+                    // }
+                }
+                for (n, (xi, yi)) in ranks.iter() {
+                    svg.polygon()
+                        .from_pos_dims(xbase + *xi as f32 * 20., y + *yi as f32 * 20., 10., 10.)
+                        .set_hover(g[*n].nucs.values().next().unwrap())
+                        .style(|s| s.fill_color(gene2color(g[*n].nucs.values().next().unwrap())));
                 }
             }
+
             y += 20.;
 
-            for child in leaves.iter().map(|i| &tree[*i]) {
-                // Leaf branch
-                svg.line()
-                    .from_coords(xoffset, y, depth, y)
-                    .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
-
-                // Landscape support line
-                svg.line()
-                    .start(xlabels - 5., y)
-                    .end(
-                        xlabels + (GENE_WIDTH + GENE_SPACING) * (2. * WINDOW as f32 + 1.)
-                            - GENE_SPACING
-                            + 5.,
-                        y,
-                    )
-                    .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
-            }
             svg.line()
                 .from_coords(xoffset, old_y, xoffset, y - 20.)
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
         }
-    }
+    };
     y
 }
 
@@ -657,7 +678,9 @@ fn process_file(filename: &str) {
     //     &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
     // );
     // draw_links(&mut svg, &links, 50.0, xlabels);
+
     draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
+
     svg.auto_fit();
 
     let mut out = File::create(&format!("{}.svg", filename)).unwrap();
