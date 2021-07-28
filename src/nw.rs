@@ -170,7 +170,11 @@ fn build_matrix(
         for j in 1..m_width {
             H[row + j] = H[pred_row + j - 1]
                 + if nucs[node_id.index()].contains(&seq[j - 1]) {
-                    m
+                    if seq[j - 1] == "=======FINAL=======" {
+                        100
+                    } else {
+                        m
+                    }
                 } else {
                     n
                 };
@@ -187,7 +191,11 @@ fn build_matrix(
                     H[row + j],
                     H[pred_row + j - 1]
                         + if nucs[node_id.index()].contains(&seq[j - 1]) {
-                            m
+                            if seq[j - 1] == "=======FINAL=======" {
+                                100
+                            } else {
+                                m
+                            }
                         } else {
                             n
                         },
@@ -458,13 +466,13 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> Align
     graph_idxs.reverse();
     seq_idxs.reverse();
 
-    (graph_idxs, seq_idxs)
+    (max_score, (graph_idxs, seq_idxs))
 }
 
 pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
     let settings = AffineNWSettings {
         matches: 5,
-        mismatches: -3,
+        mismatches: -50,
         open_gap: -1,
         extend_gap: 0,
     };
