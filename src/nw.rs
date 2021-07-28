@@ -254,7 +254,7 @@ fn print_matrix(
     println!();
 }
 
-fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> Alignment {
+fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32, Alignment) {
     let m = settings.matches;
     let n = settings.mismatches;
     let _g = settings.open_gap;
@@ -295,7 +295,7 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> Align
 
     // Backtrack
     let max_j = m_width - 1;
-    let (_, max_i) = ranks_to_nodes.iter().fold((NEG_INF, 0), |ax, &node_id| {
+    let (max_score, max_i) = ranks_to_nodes.iter().fold((NEG_INF, 0), |ax, &node_id| {
         let (max_score, _) = ax;
         let i = nodes_to_ranks[node_id.index()] + 1;
         let score = H[i * m_width + m_width - 1];
@@ -335,7 +335,11 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> Align
 
             // ...first in the directly preceding node...
             let match_cost = if nucs[node_id.index()].contains(&seq[j - 1]) {
-                m
+                if seq[j-1] == "=======FINAL=======" {
+                    100
+                } else {
+                    m
+                }
             } else {
                 n
             };
@@ -491,7 +495,15 @@ pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
             if i == 0 {
                 insert_hanging_seq(&mut g, seq, id).map(|new| (id, new.0))
             } else {
-                let alignment = affine_sw(&g, seq, &settings);
+                let rev_seq = seq.iter().cloned().rev().collect();
+                let (direct_score, direct_alignment) = affine_sw(&g, seq, &settings);
+                let (reverse_score, reverse_alignment) = affine_sw(&g, &rev_seq, &settings);
+                dbg!(direct_score, reverse_score);
+                let alignment = if direct_score >= reverse_score {
+                    &direct_alignment
+                } else {
+                    &reverse_alignment
+                };
                 add_alignment(&mut g, &alignment, seq, id).map(|new| (id, new))
             }
         })
