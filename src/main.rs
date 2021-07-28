@@ -2,8 +2,11 @@ use crate::nhx::*;
 use bimap::BiMap;
 use clap::*;
 use colorsys::{Hsl, Rgb};
-use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::Direction;
+use petgraph::{
+    algo::dijkstra,
+    graph::{DiGraph, NodeIndex, UnGraph},
+};
 use petgraph::{
     dot::{Config, Dot},
     visit::EdgeRef,
@@ -547,27 +550,64 @@ fn draw_clustered(
                     .write_all(format!("{:?}", Dot::new(&g)).as_bytes());
 
                 let mut ranks = HashMap::<NodeIndex, (usize, usize)>::new();
+                let sources: Vec<NodeIndex> = g
+                    .node_indices()
+                    .filter(|n| g.neighbors_directed(*n, Incoming).next().is_none())
+                    .collect();
+                let sinks: Vec<NodeIndex> = g
+                    .node_indices()
+                    .filter(|n| g.neighbors_directed(*n, Outgoing).next().is_none())
+                    .collect();
+                let furthest_sink: HashMap<NodeIndex, i32> = g
+                    .node_indices()
+                    .map(|s| {
+                        (
+                            s,
+                            *dijkstra(&g, s, None, |_| 1)
+                                .iter()
+                                .filter(|(n, _d)| sinks.contains(n))
+                                .max_by(|x, y| x.1.cmp(&y.1))
+                                .unwrap()
+                                .1,
+                        )
+                    })
+                    .collect();
                 fn rank(
-                    g: &poa::POAGraph,
                     n: NodeIndex,
                     x: usize,
                     y: usize,
+                    _max_y: usize,
+
+                    g: &poa::POAGraph,
+                    furthest_sink: &HashMap<NodeIndex, i32>,
                     ranks: &mut HashMap<NodeIndex, (usize, usize)>,
-                ) {
+                ) -> usize {
+                    let mut max_y = _max_y;
                     if !ranks.contains_key(&n) {
                         ranks.insert(n, (x, y));
-                        for (k, o) in g.neighbors_directed(n, Outgoing).enumerate() {
-                            rank(g, o, x + 1, y + k, ranks);
+                        let mut children: Vec<_> = g.neighbors_directed(n, Outgoing).collect();
+                        children.sort_by(|x, y| furthest_sink[y].cmp(&furthest_sink[x]));
+                        let mut children = children.iter();
+                        if let Some(first_child) = children.next() {
+                            rank(*first_child, x + 1, y, max_y, &g, furthest_sink, ranks);
                         }
+
+                        let mut offset = 0;
+                        for &c in children {
+                            rank(c, x + 1, y + offset, max_y, &g, furthest_sink, ranks);
+                            offset += cw;
+                        }
+                        current_width + offset
+                    } else {
+                        current_width
                     }
+                    max_y
                 }
-                for sink in g
-                    .node_indices()
-                    .filter(|n| g.neighbors_directed(*n, Incoming).next().is_none())
-                {
-                    dbg!(&g[sink]);
-                    let ny = rank(&g, sink, 0, 0, &mut ranks);
+                let mut offset = 0;
+                for source in sources {
+                    offset = rank(source, 0, offset, 1, &g, &furthest_sink, &mut ranks);
                 }
+                dbg!(&ranks);
                 let xbase = xlabels;
                 for e in g.edge_references() {
                     let (_x1, _y1) = *ranks.get(&e.source()).unwrap();

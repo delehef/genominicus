@@ -498,7 +498,6 @@ pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
                 let rev_seq = seq.iter().cloned().rev().collect();
                 let (direct_score, direct_alignment) = affine_sw(&g, seq, &settings);
                 let (reverse_score, reverse_alignment) = affine_sw(&g, &rev_seq, &settings);
-                dbg!(direct_score, reverse_score);
                 let alignment = if direct_score >= reverse_score {
                     &direct_alignment
                 } else {
