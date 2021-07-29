@@ -1,5 +1,4 @@
 use crate::nhx::*;
-use bimap::BiMap;
 use clap::*;
 use colorsys::{Hsl, Rgb};
 use petgraph::Direction;
@@ -12,6 +11,7 @@ use petgraph::{
     visit::EdgeRef,
 };
 use poa::POA;
+use rusqlite::*;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
@@ -38,21 +38,10 @@ const GENE_SPACING: f32 = 5.;
 const BRANCH_WIDTH: f32 = 20.;
 const FONT_SIZE: f32 = 10.;
 
-const ANCESTRAL_QUERY: &str = concat!(
-    "select name, ancestral, annotations.species, direction, chr, start from annotations ",
-    "left join mapping on name=modern where name=",
-    "(select parent from annotations where name=(select parent from annotations where name=? limit 1))"
-);
-const LEFTS_QUERY: &str = concat!(
-    "select coalesce(ancestral, concat($1, ':', $2, ':', $3)) as ancestral, direction from ",
-    "(select * from annotations left join mapping on name=modern where ",
-    "annotations.species=:species and chr=:chr and type='gene' and start<:pos order by start desc) as x limit :window"
-);
-const RIGHTS_QUERY: &str = concat!(
-    "select coalesce(ancestral, concat($1, ':', $2, ':', $3)) as ancestral, direction from ",
-    "(select * from annotations left join mapping on name=modern where ",
-    "annotations.species=:species and chr=:chr and type='gene' and start>:pos order by start asc) as x limit :window"
-);
+const ANCESTRAL_QUERY: &str =
+    concat!("select gene, ancestral, species, chr, start, direction from genomes where protein=?",);
+const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
+const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
 
 fn left_tail(
     db: &mut Connection,
@@ -61,37 +50,57 @@ fn left_tail(
     pos: i32,
     span: i64,
 ) -> Vec<(String, char)> {
-    db.query(LEFTS_QUERY, &[&species, &chr, &pos, &WINDOW])
+    let mut r = Vec::new();
+    for g in db
+        .prepare(LEFTS_QUERY)
         .unwrap()
-        .into_iter()
-        .map(|row| {
-            let ancestral: String = row.get("ancestral");
-            let direction: char = row.get::<_, String>("direction").chars().next().unwrap();
-            (ancestral, direction)
+        .query_map(params![&species, &chr, pos, WINDOW], |row| {
+            let ancestral: String = row.get("ancestral").unwrap();
+            let direction: char = row
+                .get::<_, String>("direction")
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            Ok((ancestral, direction))
         })
-        .collect::<Vec<_>>()
+        .unwrap()
+    {
+        r.push(g.unwrap());
+    }
+    r
 }
 
 fn right_tail(
-    db: &mut Client,
+    db: &mut Connection,
     species: &str,
     chr: &str,
     pos: i32,
     span: i64,
 ) -> Vec<(String, char)> {
-    db.query(RIGHTS_QUERY, &[&species, &chr, &pos, &WINDOW])
+    let mut r = Vec::new();
+    for g in db
+        .prepare(RIGHTS_QUERY)
         .unwrap()
-        .into_iter()
-        .map(|row| {
-            let ancestral: String = row.get("ancestral");
-            let direction: char = row.get::<_, String>("direction").chars().next().unwrap();
-            (ancestral, direction)
+        .query_map(params![&species, &chr, pos, WINDOW], |row| {
+            let ancestral: String = row.get("ancestral").unwrap();
+            let direction: char = row
+                .get::<_, String>("direction")
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap();
+            Ok((ancestral, direction))
         })
-        .collect::<Vec<_>>()
+        .unwrap()
+    {
+        r.push(g.unwrap());
+    }
+    r
 }
 
 fn tails(
-    db: &mut Client,
+    db: &mut Connection,
     species: &str,
     chr: &str,
     pos: i32,
@@ -221,8 +230,11 @@ fn draw_tree(
     width: f32,
     links: &mut Vec<(Vec<String>, String, Vec<String>)>,
 ) -> f32 {
-    let mut db =
-        Connection::open_with_flags("data/db.sqlite", OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let mut db = Connection::open_with_flags(
+        "/home/franklin/work/duplications/data/db.sqlite",
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
     let mut y = yoffset;
     let mut old_y = 0.;
     for (i, child) in node.children().iter().map(|i| &tree[*i]).enumerate() {
@@ -252,34 +264,19 @@ fn draw_tree(
 
             if let Some(name) = &child.name {
                 let protein_name = name.split('_').next().unwrap();
-                if let Ok(r) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |row| row.get(0)) {
-                    let gene_name: &str = r.get("name");
-                    let ancestral_name: &str = r.get("ancestral");
-                    let species: &str = r.get("species");
-                    let chr: &str = r.get("chr");
-                    let pos: i32 = r.get("start");
-                    let direction: &str = r.get("direction");
-
-                    let proto_lefts = db
-                        .query(LEFTS_QUERY, &[&species, &chr, &pos, &WINDOW])
-                        .unwrap()
-                        .into_iter()
-                        .map(|row| {
-                            let ancestral: String = row.get("ancestral");
-                            let direction: String = row.get("direction");
-                            (ancestral, direction)
-                        })
-                        .collect::<Vec<_>>();
-                    let proto_rights = db
-                        .query(RIGHTS_QUERY, &[&species, &chr, &pos, &WINDOW])
-                        .unwrap()
-                        .into_iter()
-                        .map(|row| {
-                            let ancestral: String = row.get("ancestral");
-                            let direction: String = row.get("direction");
-                            (ancestral, direction)
-                        })
-                        .collect::<Vec<_>>();
+                if let Ok((gene, ancestral, species, chr, pos, direction)) =
+                    db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
+                        let gene: String = r.get("gene").unwrap();
+                        let ancestral: String = r.get("ancestral").unwrap();
+                        let species: String = r.get("species").unwrap();
+                        let chr: String = r.get("chr").unwrap();
+                        let pos: i32 = r.get("start").unwrap();
+                        let direction: String = r.get("direction").unwrap();
+                        Ok((gene, ancestral, species, chr, pos, direction))
+                    })
+                {
+                    let proto_lefts = left_tail(&mut db, &species, &chr, pos, WINDOW);
+                    let proto_rights = right_tail(&mut db, &species, &chr, pos, WINDOW);
                     let (lefts, rights) = if true {
                         (proto_lefts, proto_rights)
                     } else {
@@ -289,14 +286,14 @@ fn draw_tree(
                     // Gene/protein name
                     svg.text()
                         .pos(depth, y + 5.)
-                        .text(format!("{} {} {}/{}", child.id, protein_name, species, chr))
+                        .text(format!("{} {}/{}", gene, species, chr))
                         .style(|s| s.fill_color(name2color(species)));
 
                     // Left tail
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in lefts.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0), &g.0);
+                        draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
                     }
 
                     // The Gene
@@ -305,33 +302,32 @@ fn draw_tree(
                         xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
                         y,
                         true,
-                        gene2color(&ancestral_name),
-                        &ancestral_name,
+                        gene2color(&ancestral),
+                        &ancestral,
                     )
-                        .style(|s| {
-                            s.stroke_width(2.)
-                                .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                        });
+                    .style(|s| {
+                        s.stroke_width(2.)
+                            .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                    });
 
                     // Right tail
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in rights.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == "+", gene2color(&g.0), &g.0);
+                        draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
                     }
                     links.push((
                         lefts.iter().map(|x| x.0.clone()).collect(),
-                        ancestral_name.into(),
+                        ancestral.into(),
                         rights.iter().map(|x| x.0.clone()).collect(),
                     ));
                 } else {
                     // The node was not found in the database
-                    eprintln!("{} not found", name);
+                    eprintln!("{} -- {} not found", name, protein_name);
                     links.push((Vec::new(), name.into(), Vec::new()));
                 }
-            } else { // The node does not have a name
+                y += 20.;
             }
-            y += 20.;
         } else {
             svg.line()
                 .from_coords(xoffset, y, xoffset + BRANCH_WIDTH, y)
@@ -371,9 +367,9 @@ fn draw_links(
             let x1 = xbase - i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
                 w[1].0
-                .iter()
-                .enumerate()
-                .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase - j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
@@ -392,9 +388,9 @@ fn draw_links(
             let x1 = xbase + i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
                 w[1].2
-                .iter()
-                .enumerate()
-                .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase + j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
@@ -469,8 +465,11 @@ fn draw_clustered(
     } else {
         let leaves = tree.non_d_descendants(node.id);
         let dups = tree.d_descendants(node.id);
-        let mut db =
-            Connection::open_with_flags("data/db.sqlite", OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let mut db = Connection::open_with_flags(
+            "/home/franklin/work/duplications/data/db.sqlite",
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .unwrap();
 
         let old_y = y;
         for &child in dups.iter() {
@@ -494,15 +493,23 @@ fn draw_clustered(
             .filter_map(|&l| {
                 if let Some(name) = &tree[l].name {
                     let protein_name = name.split('_').next().unwrap();
-                    if let Ok(r) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |row| row.get(0))
+                    if let Ok((gene, ancestral, species, chr, pos, direction)) =
+                        db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
+                            let gene: String = r.get("gene").unwrap();
+                            let ancestral: String = r.get("ancestral").unwrap();
+                            let species: String = r.get("species").unwrap();
+                            let chr: String = r.get("chr").unwrap();
+                            let pos: i32 = r.get("start").unwrap();
+                            let direction: char = r
+                                .get::<_, String>("direction")
+                                .unwrap()
+                                .chars()
+                                .next()
+                                .unwrap();
+                            Ok((gene, ancestral, species, chr, pos, direction))
+                        })
                     {
-                        let gene_name: &str = r.get("name");
-                        let ancestral_name: &str = r.get("ancestral");
-                        let species: &str = r.get("species");
-                        let chr: &str = r.get("chr");
-                        let pos: i32 = r.get("start");
-                        let direction: char = r.get::<_, &str>("direction").chars().next().unwrap();
-                        let (left, right) = tails(&mut db, species, chr, pos, WINDOW);
+                        let (left, right) = tails(&mut db, &species, &chr, pos, WINDOW);
                         Some(
                             left.iter()
                                 .map(|g| &g.0)
@@ -512,11 +519,8 @@ fn draw_clustered(
                                 .cloned()
                                 .collect::<Vec<String>>(),
                         )
-
-                        // Some((left, right))
                     } else {
-                        // The node was not found in the database
-                        eprintln!("{} not found", name);
+                        eprintln!("{} -- {} not found", name, protein_name);
                         None
                     }
                 } else {
@@ -581,19 +585,9 @@ fn draw_clustered(
                         ranks.insert(n, (x, y));
                         let mut children: Vec<_> = g.neighbors_directed(n, Outgoing).collect();
                         children.sort_by(|x, y| furthest_sink[y].cmp(&furthest_sink[x]));
-                        let mut children = children.iter();
-                        if let Some(first_child) = children.next() {
-                            rank(*first_child, x + 1, y, max_y, &g, furthest_sink, ranks);
+                        for &c in children.iter() {
+                            rank(c, x + 1, y, max_y, &g, furthest_sink, ranks);
                         }
-
-                        let mut offset = 0;
-                        for &c in children {
-                            rank(c, x + 1, y + offset, max_y, &g, furthest_sink, ranks);
-                            offset += cw;
-                        }
-                        current_width + offset
-                    } else {
-                        current_width
                     }
                     max_y
                 }
@@ -706,17 +700,16 @@ fn process_file(filename: &str) {
         .pos(FONT_SIZE, FONT_SIZE)
         .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
-    // draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
-    // let mut links = Vec::new();
-    // draw_tree(
-    //     &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
-    // );
-    // draw_links(&mut svg, &links, 50.0, xlabels);
+    draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
+    let mut links = Vec::new();
+    draw_tree(
+        &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+    );
+    draw_links(&mut svg, &links, 50.0, xlabels);
 
-    draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
+    // draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
 
     svg.auto_fit();
-
     let mut out = File::create(&format!("{}.svg", filename)).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();
 }
