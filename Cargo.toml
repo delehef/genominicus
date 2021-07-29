@@ -13,7 +13,7 @@ pest_derive = "2"
 smartstring = "0.2"
 svarog = { path = "../svarog" }
 md5 = "0.7"
-postgres = "0.19"
+rusqlite = "0.25"
 clap = "2"
 colorsys = "0.6"
 petgraph = "0.6"

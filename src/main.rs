@@ -12,7 +12,6 @@ use petgraph::{
     visit::EdgeRef,
 };
 use poa::POA;
-use postgres::{Client, NoTls};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
@@ -42,21 +41,21 @@ const FONT_SIZE: f32 = 10.;
 const ANCESTRAL_QUERY: &str = concat!(
     "select name, ancestral, annotations.species, direction, chr, start from annotations ",
     "left join mapping on name=modern where name=",
-    "(select parent from annotations where name=(select parent from annotations where name=$1 limit 1))"
+    "(select parent from annotations where name=(select parent from annotations where name=? limit 1))"
 );
 const LEFTS_QUERY: &str = concat!(
     "select coalesce(ancestral, concat($1, ':', $2, ':', $3)) as ancestral, direction from ",
     "(select * from annotations left join mapping on name=modern where ",
-    "annotations.species=$1 and chr=$2 and type='gene' and start<$3 order by start desc) as x limit $4"
+    "annotations.species=:species and chr=:chr and type='gene' and start<:pos order by start desc) as x limit :window"
 );
 const RIGHTS_QUERY: &str = concat!(
     "select coalesce(ancestral, concat($1, ':', $2, ':', $3)) as ancestral, direction from ",
     "(select * from annotations left join mapping on name=modern where ",
-    "annotations.species=$1 and chr=$2 and type='gene' and start>$3 order by start asc) as x limit $4"
+    "annotations.species=:species and chr=:chr and type='gene' and start>:pos order by start asc) as x limit :window"
 );
 
 fn left_tail(
-    db: &mut Client,
+    db: &mut Connection,
     species: &str,
     chr: &str,
     pos: i32,
@@ -222,11 +221,8 @@ fn draw_tree(
     width: f32,
     links: &mut Vec<(Vec<String>, String, Vec<String>)>,
 ) -> f32 {
-    let mut pg = Client::connect(
-        "host=localhost user=franklin dbname=duplications password='notanumber'",
-        NoTls,
-    )
-    .unwrap();
+    let mut db =
+        Connection::open_with_flags("data/db.sqlite", OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     let mut y = yoffset;
     let mut old_y = 0.;
     for (i, child) in node.children().iter().map(|i| &tree[*i]).enumerate() {
@@ -256,7 +252,7 @@ fn draw_tree(
 
             if let Some(name) = &child.name {
                 let protein_name = name.split('_').next().unwrap();
-                if let Ok(r) = pg.query_one(ANCESTRAL_QUERY, &[&protein_name]) {
+                if let Ok(r) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |row| row.get(0)) {
                     let gene_name: &str = r.get("name");
                     let ancestral_name: &str = r.get("ancestral");
                     let species: &str = r.get("species");
@@ -264,7 +260,7 @@ fn draw_tree(
                     let pos: i32 = r.get("start");
                     let direction: &str = r.get("direction");
 
-                    let proto_lefts = pg
+                    let proto_lefts = db
                         .query(LEFTS_QUERY, &[&species, &chr, &pos, &WINDOW])
                         .unwrap()
                         .into_iter()
@@ -274,7 +270,7 @@ fn draw_tree(
                             (ancestral, direction)
                         })
                         .collect::<Vec<_>>();
-                    let proto_rights = pg
+                    let proto_rights = db
                         .query(RIGHTS_QUERY, &[&species, &chr, &pos, &WINDOW])
                         .unwrap()
                         .into_iter()
@@ -312,10 +308,10 @@ fn draw_tree(
                         gene2color(&ancestral_name),
                         &ancestral_name,
                     )
-                    .style(|s| {
-                        s.stroke_width(2.)
-                            .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                    });
+                        .style(|s| {
+                            s.stroke_width(2.)
+                                .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                        });
 
                     // Right tail
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
@@ -375,9 +371,9 @@ fn draw_links(
             let x1 = xbase - i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
                 w[1].0
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
+                .iter()
+                .enumerate()
+                .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase - j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
@@ -396,9 +392,9 @@ fn draw_links(
             let x1 = xbase + i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
                 w[1].2
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
+                .iter()
+                .enumerate()
+                .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase + j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
@@ -473,11 +469,8 @@ fn draw_clustered(
     } else {
         let leaves = tree.non_d_descendants(node.id);
         let dups = tree.d_descendants(node.id);
-        let mut pg = Client::connect(
-            "host=localhost user=franklin dbname=duplications password='notanumber'",
-            NoTls,
-        )
-        .unwrap();
+        let mut db =
+            Connection::open_with_flags("data/db.sqlite", OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
 
         let old_y = y;
         for &child in dups.iter() {
@@ -501,14 +494,15 @@ fn draw_clustered(
             .filter_map(|&l| {
                 if let Some(name) = &tree[l].name {
                     let protein_name = name.split('_').next().unwrap();
-                    if let Ok(r) = pg.query_one(ANCESTRAL_QUERY, &[&protein_name]) {
+                    if let Ok(r) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |row| row.get(0))
+                    {
                         let gene_name: &str = r.get("name");
                         let ancestral_name: &str = r.get("ancestral");
                         let species: &str = r.get("species");
                         let chr: &str = r.get("chr");
                         let pos: i32 = r.get("start");
                         let direction: char = r.get::<_, &str>("direction").chars().next().unwrap();
-                        let (left, right) = tails(&mut pg, species, chr, pos, WINDOW);
+                        let (left, right) = tails(&mut db, species, chr, pos, WINDOW);
                         Some(
                             left.iter()
                                 .map(|g| &g.0)
