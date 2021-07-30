@@ -1,11 +1,11 @@
 use crate::nhx::*;
 use clap::*;
 use colorsys::{Hsl, Rgb};
-use petgraph::Direction;
 use petgraph::{
     algo::dijkstra,
     graph::{DiGraph, NodeIndex, UnGraph},
 };
+use petgraph::{algo::toposort, Direction};
 use petgraph::{
     dot::{Config, Dot},
     visit::EdgeRef,
@@ -542,16 +542,17 @@ fn draw_clustered(
                 .enumerate()
                 .collect();
             let xbase = xlabels;
-            if node.id == 5 {
+            if node.id != 57907890890 {
                 let _ = File::create(&format!("poa-{}.dot", node.id))
                     .unwrap()
                     .write_all(format!("{:?}", Dot::new(&g)).as_bytes());
 
-                let mut ranks = HashMap::<NodeIndex, (usize, usize)>::new();
-                let sources: Vec<NodeIndex> = g
+                let centromere = g
                     .node_indices()
-                    .filter(|n| g.neighbors_directed(*n, Incoming).next().is_none())
-                    .collect();
+                    .filter(|n| g[*n].nucs.values().any(|v| v == "=======FINAL======="))
+                    .next()
+                    .unwrap();
+                dbg!(centromere);
                 let sinks: Vec<NodeIndex> = g
                     .node_indices()
                     .filter(|n| g.neighbors_directed(*n, Outgoing).next().is_none())
@@ -570,42 +571,63 @@ fn draw_clustered(
                         )
                     })
                     .collect();
+                let mut sources: Vec<NodeIndex> = g
+                    .node_indices()
+                    .filter(|n| g.neighbors_directed(*n, Incoming).next().is_none())
+                    .collect();
+                sources.sort_by(|x, y| furthest_sink[y].cmp(&furthest_sink[x]));
+
                 fn rank(
                     n: NodeIndex,
-                    x: usize,
-                    y: usize,
-                    _max_y: usize,
+                    x: i32,
+                    y: i32,
 
                     g: &poa::POAGraph,
                     furthest_sink: &HashMap<NodeIndex, i32>,
-                    ranks: &mut HashMap<NodeIndex, (usize, usize)>,
-                ) -> usize {
-                    let mut max_y = _max_y;
+                    ranks: &mut HashMap<NodeIndex, (i32, i32)>,
+                    direction: bool,
+                ) {
                     if !ranks.contains_key(&n) {
                         ranks.insert(n, (x, y));
-                        let mut children: Vec<_> = g.neighbors_directed(n, Outgoing).collect();
-                        children.sort_by(|x, y| furthest_sink[y].cmp(&furthest_sink[x]));
-                        for &c in children.iter() {
-                            rank(c, x + 1, y, max_y, &g, furthest_sink, ranks);
+                        let mut children: Vec<_> = g.neighbors_directed(n, if direction { Outgoing } else { Incoming }).collect();
+                        children.sort_by(|y, x| furthest_sink[y].cmp(&furthest_sink[x]));
+
+                        let mut top;
+                        for (k, &c) in children.iter().enumerate() {
+                            top = ranks.values().map(|v| v.1).max().unwrap_or(0) as i32;
+                            let next_x = if direction { x+1 } else { x - 1 };
+                            if k > 0 {
+                                rank(c, next_x, top + 1, &g, furthest_sink, ranks, direction);
+                            } else {
+                                rank(c, next_x, y, &g, furthest_sink, ranks, direction);
+                            }
                         }
                     }
-                    max_y
                 }
-                let mut offset = 0;
-                for source in sources {
-                    offset = rank(source, 0, offset, 1, &g, &furthest_sink, &mut ranks);
-                }
-                dbg!(&ranks);
+
+                let mut ranks_left = HashMap::<NodeIndex, (i32, i32)>::new();
+                let mut ranks_right = HashMap::<NodeIndex, (i32, i32)>::new();
+                // for source in sources {
+                    // let top = ranks.values().map(|v| v.1).max().unwrap_or(1);
+                rank(centromere, 20, 0, &g, &furthest_sink, &mut ranks_left, false);
+                ranks_left.remove(&centromere);
+                rank(centromere, 20, 0, &g, &furthest_sink, &mut ranks_right, true);
+                // }
+                // for (k, n) in toposort(&g, None).unwrap().iter().enumerate() {
+                //     ranks.insert(*n, (k, 0));
+                // }
+                let ranks: HashMap::<NodeIndex, (i32, i32)> = ranks_left.into_iter().chain(ranks_right).collect();
+
                 let xbase = xlabels;
                 for e in g.edge_references() {
-                    let (_x1, _y1) = *ranks.get(&e.source()).unwrap();
-                    let (_x2, _y2) = *ranks.get(&e.target()).unwrap();
-                    let x1 = std::cmp::min(_x1, _x2) as f32;
-                    let x2 = std::cmp::max(_x1, _x2) as f32;
-                    let y1 = std::cmp::min(_y1, _y2) as f32;
-                    let y2 = std::cmp::max(_y1, _y2) as f32;
+                    let (_x1, _y1) = *ranks.get(&e.source()).unwrap_or(&(0, 0));
+                    let (_x2, _y2) = *ranks.get(&e.target()).unwrap_or(&(0, 0));
+                    let ((x1, y1), (x2, y2)) = if _x1 < _x2 {
+                        ((_x1 as f32, _y1 as f32), (_x2 as f32, _y2 as f32))
+                    } else {
+                        ((_x2 as f32, _y2 as f32), (_x1 as f32, _y1 as f32))
+                    };
 
-                    // if x1 - x2 == 1. {
                     svg.line()
                         .from_coords(
                             xbase + x1 as f32 * 20. + 5.,
@@ -617,50 +639,21 @@ fn draw_clustered(
                             s.stroke_color(StyleColor::RGB(0, 0, 0))
                                 .stroke_width(e.weight().len() as f32)
                         });
-                    // } else {
-                    //     let dx = x1 as f32 - x2 as f32;
-                    //     let mid_y = y + if y2 != y1 {
-                    //         (y2 as f32 - y1 as f32)/2.
-                    //     } else {
-                    //         y2 as f32 + 10.
-                    //     };
-                    //     svg.line()
-                    //         .from_coords(
-                    //             xbase + x1 as f32 * 20. + 5.,
-                    //             y + y1 as f32 * 20. + 5.,
-                    //             xbase + x2 as f32 * 20. + 5.,
-                    //             y + y2 as f32 * 20. + 5.,
-                    //         )
+
+                    // if (x1 - x2).abs() > 1. {
+                    //     let dy = 15. + 20. * (x1 - x2).abs().log10();
+                    //     svg.polygon()
+                    //         .from_coords([
+                    //             (xbase + x1 as f32 * 20. + 5., y + y1 as f32 * 20. + 5.),
+                    //             (xbase + x1 as f32 * 20. + 5., y + y1 as f32 * 20. + 5. + dy),
+                    //             (xbase + x2 as f32 * 20. + 5., y + y2 as f32 * 20. + 5. + dy),
+                    //             (xbase + x2 as f32 * 20. + 5., y + y2 as f32 * 20. + 5.),
+                    //         ])
                     //         .style(|s| {
                     //             s.stroke_color(StyleColor::RGB(0, 0, 0))
                     //                 .stroke_width(e.weight().len() as f32)
+                    //                 .fill_opacity(0.)
                     //         });
-                    //     // svg.polygon()
-                    //     //     .from_coords([
-                    //     //         (
-                    //     //             xbase + x1 as f32 * 20. + 5.,
-                    //     //             y + y1 as f32 * 20. + 5.,
-                    //     //         ),
-
-                    //     //         // (
-                    //     //         //     xbase + x1 as f32 * 20. + 5.,
-                    //     //         //     mid_y
-                    //     //         // ),
-                    //     //         // (
-                    //     //         //     xbase + x2 as f32 * 20. + 5.,
-                    //     //         //     mid_y
-                    //     //         // ),
-
-                    //     //         (
-                    //     //             xbase + x2 as f32 * 20. + 5.,
-                    //     //             y + y2 as f32 * 20. + 5.,
-                    //     //         ),
-                    //     //     ])
-                    //     //     .style(|s| {
-                    //     //         s.stroke_color(StyleColor::RGB(0, 0, 0))
-                    //     //             .stroke_width(e.weight().len() as f32)
-                    //     //             .fill_opacity(0.)
-                    //     //     });
                     // }
                 }
                 for (n, (xi, yi)) in ranks.iter() {
@@ -671,7 +664,7 @@ fn draw_clustered(
                 }
             }
 
-            y += 20.;
+            y += 300.;
 
             svg.line()
                 .from_coords(xoffset, old_y, xoffset, y - 20.)
@@ -700,14 +693,14 @@ fn process_file(filename: &str) {
         .pos(FONT_SIZE, FONT_SIZE)
         .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
-    draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
-    let mut links = Vec::new();
-    draw_tree(
-        &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
-    );
-    draw_links(&mut svg, &links, 50.0, xlabels);
+    // draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
+    // let mut links = Vec::new();
+    // draw_tree(
+    //     &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+    // );
+    // draw_links(&mut svg, &links, 50.0, xlabels);
 
-    // draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
+    draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
 
     svg.auto_fit();
     let mut out = File::create(&format!("{}.svg", filename)).unwrap();
