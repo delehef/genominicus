@@ -253,13 +253,15 @@ fn draw_tree(
 
             // Landscape support line
             svg.line()
-                .start(xlabels - 5., y)
-                .end(
-                    xlabels + (GENE_WIDTH + GENE_SPACING) * (2. * WINDOW as f32 + 1.)
-                        - GENE_SPACING
-                        + 5.,
-                    y,
-                )
+                .from_points([
+                    (xlabels - 5., y),
+                    (
+                        xlabels + (GENE_WIDTH + GENE_SPACING) * (2. * WINDOW as f32 + 1.)
+                            - GENE_SPACING
+                            + 5.,
+                        y,
+                    ),
+                ])
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             if let Some(name) = &child.name {
@@ -373,8 +375,7 @@ fn draw_links(
             {
                 let x2 = xbase - j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
-                    .start(x1, y + 5.)
-                    .end(x2, y + 20. - 5.)
+                    .from_points([(x1, y + 5.), (x2, y + 20. - 5.)])
                     .style(|s| {
                         s.stroke_color(StyleColor::String("#000".into()))
                             .stroke_width(1.0)
@@ -394,8 +395,7 @@ fn draw_links(
             {
                 let x2 = xbase + j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
-                    .start(x1, y + 5.)
-                    .end(x2, y + 20. - 5.)
+                    .from_points([(x1, y + 5.), (x2, y + 20. - 5.)])
                     .style(|s| {
                         s.stroke_color(StyleColor::String("#000".into()))
                             .stroke_width(1.0)
@@ -542,7 +542,7 @@ fn draw_clustered(
                 .enumerate()
                 .collect();
             let xbase = xlabels;
-            if node.id != 57907890890 {
+            if node.id != 514321 {
                 let _ = File::create(&format!("poa-{}.dot", node.id))
                     .unwrap()
                     .write_all(format!("{:?}", Dot::new(&g)).as_bytes());
@@ -552,7 +552,6 @@ fn draw_clustered(
                     .filter(|n| g[*n].nucs.values().any(|v| v == "=======FINAL======="))
                     .next()
                     .unwrap();
-                dbg!(centromere);
                 let sinks: Vec<NodeIndex> = g
                     .node_indices()
                     .filter(|n| g.neighbors_directed(*n, Outgoing).next().is_none())
@@ -577,84 +576,136 @@ fn draw_clustered(
                     .collect();
                 sources.sort_by(|x, y| furthest_sink[y].cmp(&furthest_sink[x]));
 
-                fn rank(
+
+                let mut ranks_left = HashMap::<NodeIndex, (i32, i32)>::new();
+                let mut ranks_right = HashMap::<NodeIndex, (i32, i32)>::new();
+
+                let mut left_nodes: Vec<_> = g.neighbors_directed(centromere, Incoming).collect();
+                let mut right_nodes: Vec<_> = g.neighbors_directed(centromere, Outgoing).collect();
+                left_nodes.sort_by_key(|&x| {
+                    -(g.edges_connecting(x, centromere)
+                        .next()
+                        .unwrap()
+                        .weight()
+                        .len() as i32)
+                });
+                right_nodes.sort_by_key(|&x| {
+                    -(g.edges_connecting(centromere, x)
+                        .next()
+                        .unwrap()
+                        .weight()
+                        .len() as i32)
+                });
+
+                fn draw_arcs(
+                    g: &poa::POAGraph,
                     n: NodeIndex,
                     x: i32,
                     y: i32,
-
-                    g: &poa::POAGraph,
-                    furthest_sink: &HashMap<NodeIndex, i32>,
+                    dir: Direction,
                     ranks: &mut HashMap<NodeIndex, (i32, i32)>,
-                    direction: bool,
                 ) {
-                    if !ranks.contains_key(&n) {
-                        ranks.insert(n, (x, y));
-                        let mut children: Vec<_> = g.neighbors_directed(n, if direction { Outgoing } else { Incoming }).collect();
-                        children.sort_by(|y, x| furthest_sink[y].cmp(&furthest_sink[x]));
+                    fn get_nodes(
+                        g: &poa::POAGraph,
+                        n: NodeIndex,
+                        ns: &mut Vec<NodeIndex>,
+                        dir: petgraph::Direction,
+                    ) {
+                        if !ns.contains(&n) {
+                            ns.push(n);
+                            let mut es = g.edges_directed(n, dir).collect::<Vec<_>>();
+                            es.sort_by(|e2, e1| e2.weight().len().cmp(&e1.weight().len()));
+                            for e in es {
+                                let o = if e.source() == n {
+                                    e.target()
+                                } else {
+                                    e.source()
+                                };
+                                get_nodes(g, o, ns, dir);
+                            }
+                        }
+                    }
 
-                        let mut top;
-                        for (k, &c) in children.iter().enumerate() {
-                            top = ranks.values().map(|v| v.1).max().unwrap_or(0) as i32;
-                            let next_x = if direction { x+1 } else { x - 1 };
-                            if k > 0 {
-                                rank(c, next_x, top + 1, &g, furthest_sink, ranks, direction);
+                    let mut all_nodes = Vec::<NodeIndex>::new();
+                    get_nodes(g, n, &mut all_nodes, dir);
+                    let mut tail = toposort(g, None)
+                        .unwrap()
+                        .into_iter()
+                        .filter(|n| all_nodes.contains(n))
+                        .collect::<Vec<_>>();
+
+                    if dir == Incoming {
+                        tail.reverse();
+                    }
+
+                    for (k, n) in tail.into_iter().enumerate() {
+                        if !ranks.contains_key(&n) {
+                            if dir == Outgoing {
+                                ranks.insert(n, (x + k as i32, y));
                             } else {
-                                rank(c, next_x, y, &g, furthest_sink, ranks, direction);
+                                ranks.insert(n, (x - k as i32, y));
                             }
                         }
                     }
                 }
 
-                let mut ranks_left = HashMap::<NodeIndex, (i32, i32)>::new();
-                let mut ranks_right = HashMap::<NodeIndex, (i32, i32)>::new();
-                // for source in sources {
-                    // let top = ranks.values().map(|v| v.1).max().unwrap_or(1);
-                rank(centromere, 20, 0, &g, &furthest_sink, &mut ranks_left, false);
-                ranks_left.remove(&centromere);
-                rank(centromere, 20, 0, &g, &furthest_sink, &mut ranks_right, true);
-                // }
-                // for (k, n) in toposort(&g, None).unwrap().iter().enumerate() {
-                //     ranks.insert(*n, (k, 0));
-                // }
-                let ranks: HashMap::<NodeIndex, (i32, i32)> = ranks_left.into_iter().chain(ranks_right).collect();
+                let mut k = 0;
+                for n in left_nodes.iter() {
+                    if !ranks_left.contains_key(n) {
+                        draw_arcs(&g, *n, -1, k as i32, Incoming, &mut ranks_left);
+                        k += 1;
+                    }
+                }
+                k = 0;
+                for n in right_nodes.iter() {
+                    if !ranks_right.contains_key(n) {
+                        draw_arcs(&g, *n, 1, k as i32, Outgoing, &mut ranks_right);
+                        k += 1;
+                    }
+                }
+                for (k, n) in right_nodes.iter().enumerate() {
+                    draw_arcs(&g, *n, 1, k as i32, Outgoing, &mut ranks_right);
+                }
+
+                let mut ranks: HashMap<NodeIndex, (i32, i32)> =
+                    ranks_left.into_iter().chain(ranks_right).collect();
+                ranks.insert(centromere, (0, 0));
 
                 let xbase = xlabels;
                 for e in g.edge_references() {
                     let (_x1, _y1) = *ranks.get(&e.source()).unwrap_or(&(0, 0));
                     let (_x2, _y2) = *ranks.get(&e.target()).unwrap_or(&(0, 0));
-                    let ((x1, y1), (x2, y2)) = if _x1 < _x2 {
-                        ((_x1 as f32, _y1 as f32), (_x2 as f32, _y2 as f32))
+                    let ((x1, y1), (x2, y2)) = ((_x1 as f32, _y1 as f32), (_x2 as f32, _y2 as f32));
+
+                    if (x1 - x2).abs() > 1. {
+                        let dy = 10.;
+                        svg.line()
+                            .from_points([
+                                (xbase + x1 as f32 * 20. + 5., y + y1 as f32 * 20. + 5.),
+                                (
+                                    xbase + (x1 + x2) as f32 / 2. * 20. + 5.,
+                                    y + y1 as f32 * 20. + 5. + dy,
+                                ),
+                                (xbase + x2 as f32 * 20. + 5., y + y2 as f32 * 20. + 5.),
+                            ])
+                            .style(|s| {
+                                s.stroke_color(StyleColor::RGB(50, 50, 50))
+                                    .stroke_width(e.weight().len() as f32)
+                                    .fill_opacity(0.)
+                            });
                     } else {
-                        ((_x2 as f32, _y2 as f32), (_x1 as f32, _y1 as f32))
-                    };
-
-                    svg.line()
-                        .from_coords(
-                            xbase + x1 as f32 * 20. + 5.,
-                            y + y1 as f32 * 20. + 5.,
-                            xbase + x2 as f32 * 20. + 5.,
-                            y + y2 as f32 * 20. + 5.,
-                        )
-                        .style(|s| {
-                            s.stroke_color(StyleColor::RGB(0, 0, 0))
-                                .stroke_width(e.weight().len() as f32)
-                        });
-
-                    // if (x1 - x2).abs() > 1. {
-                    //     let dy = 15. + 20. * (x1 - x2).abs().log10();
-                    //     svg.polygon()
-                    //         .from_coords([
-                    //             (xbase + x1 as f32 * 20. + 5., y + y1 as f32 * 20. + 5.),
-                    //             (xbase + x1 as f32 * 20. + 5., y + y1 as f32 * 20. + 5. + dy),
-                    //             (xbase + x2 as f32 * 20. + 5., y + y2 as f32 * 20. + 5. + dy),
-                    //             (xbase + x2 as f32 * 20. + 5., y + y2 as f32 * 20. + 5.),
-                    //         ])
-                    //         .style(|s| {
-                    //             s.stroke_color(StyleColor::RGB(0, 0, 0))
-                    //                 .stroke_width(e.weight().len() as f32)
-                    //                 .fill_opacity(0.)
-                    //         });
-                    // }
+                        svg.line()
+                            .from_coords(
+                                xbase + x1 as f32 * 20. + 5.,
+                                y + y1 as f32 * 20. + 5.,
+                                xbase + x2 as f32 * 20. + 5.,
+                                y + y2 as f32 * 20. + 5.,
+                            )
+                            .style(|s| {
+                                s.stroke_color(StyleColor::RGB(50, 50, 50))
+                                    .stroke_width(e.weight().len() as f32)
+                            });
+                    }
                 }
                 for (n, (xi, yi)) in ranks.iter() {
                     svg.polygon()
