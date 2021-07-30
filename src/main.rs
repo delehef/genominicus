@@ -12,10 +12,10 @@ use petgraph::{
 };
 use poa::POA;
 use rusqlite::*;
-use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
+use std::{borrow::BorrowMut, collections::HashSet};
 use std::{collections::HashMap, usize};
 use svarog::*;
 use Direction::{Incoming, Outgoing};
@@ -488,25 +488,18 @@ fn draw_clustered(
             );
         }
 
-        let mut tails = leaves
+        let tails = leaves
             .iter()
             .filter_map(|&l| {
                 if let Some(name) = &tree[l].name {
                     let protein_name = name.split('_').next().unwrap();
-                    if let Ok((gene, ancestral, species, chr, pos, direction)) =
+                    if let Ok((ancestral, species, chr, pos)) =
                         db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
-                            let gene: String = r.get("gene").unwrap();
                             let ancestral: String = r.get("ancestral").unwrap();
                             let species: String = r.get("species").unwrap();
                             let chr: String = r.get("chr").unwrap();
                             let pos: i32 = r.get("start").unwrap();
-                            let direction: char = r
-                                .get::<_, String>("direction")
-                                .unwrap()
-                                .chars()
-                                .next()
-                                .unwrap();
-                            Ok((gene, ancestral, species, chr, pos, direction))
+                            Ok((ancestral, species, chr, pos))
                         })
                     {
                         let (left, right) = tails(&mut db, &species, &chr, pos, WINDOW);
@@ -528,194 +521,164 @@ fn draw_clustered(
                 }
             })
             .collect::<Vec<_>>();
-        if tails.is_empty() {
-            eprintln!("EMPTY");
-        } else {
+        if !tails.is_empty() {
             let h_tails = tails
                 .into_iter()
                 .enumerate()
                 .collect::<HashMap<usize, Vec<String>>>();
-            let (g, starts) = nw::align(&h_tails);
+            let (g, _) = nw::align(&h_tails);
             let labels: HashMap<usize, String> = leaves
                 .iter()
                 .filter_map(|&l| tree[l].name.clone())
                 .enumerate()
                 .collect();
-            let xbase = xlabels;
-            if node.id != 514321 {
-                let _ = File::create(&format!("poa-{}.dot", node.id))
-                    .unwrap()
-                    .write_all(format!("{:?}", Dot::new(&g)).as_bytes());
 
-                let centromere = g
-                    .node_indices()
-                    .filter(|n| g[*n].nucs.values().any(|v| v == "=======FINAL======="))
+            let centromere = g
+                .node_indices()
+                .filter(|n| g[*n].nucs.values().any(|v| v == "=======FINAL======="))
+                .next()
+                .unwrap();
+
+            let mut ranks_left = HashMap::<NodeIndex, (i32, i32)>::new();
+            let mut ranks_right = HashMap::<NodeIndex, (i32, i32)>::new();
+
+            let mut left_nodes: Vec<_> = g.neighbors_directed(centromere, Incoming).collect();
+            let mut right_nodes: Vec<_> = g.neighbors_directed(centromere, Outgoing).collect();
+            left_nodes.sort_by_key(|&x| {
+                -(g.edges_connecting(x, centromere)
                     .next()
-                    .unwrap();
-                let sinks: Vec<NodeIndex> = g
-                    .node_indices()
-                    .filter(|n| g.neighbors_directed(*n, Outgoing).next().is_none())
-                    .collect();
-                let furthest_sink: HashMap<NodeIndex, i32> = g
-                    .node_indices()
-                    .map(|s| {
-                        (
-                            s,
-                            *dijkstra(&g, s, None, |_| 1)
-                                .iter()
-                                .filter(|(n, _d)| sinks.contains(n))
-                                .max_by(|x, y| x.1.cmp(&y.1))
-                                .unwrap()
-                                .1,
-                        )
-                    })
-                    .collect();
-                let mut sources: Vec<NodeIndex> = g
-                    .node_indices()
-                    .filter(|n| g.neighbors_directed(*n, Incoming).next().is_none())
-                    .collect();
-                sources.sort_by(|x, y| furthest_sink[y].cmp(&furthest_sink[x]));
+                    .unwrap()
+                    .weight()
+                    .len() as i32)
+            });
+            right_nodes.sort_by_key(|&x| {
+                -(g.edges_connecting(centromere, x)
+                    .next()
+                    .unwrap()
+                    .weight()
+                    .len() as i32)
+            });
 
-
-                let mut ranks_left = HashMap::<NodeIndex, (i32, i32)>::new();
-                let mut ranks_right = HashMap::<NodeIndex, (i32, i32)>::new();
-
-                let mut left_nodes: Vec<_> = g.neighbors_directed(centromere, Incoming).collect();
-                let mut right_nodes: Vec<_> = g.neighbors_directed(centromere, Outgoing).collect();
-                left_nodes.sort_by_key(|&x| {
-                    -(g.edges_connecting(x, centromere)
-                        .next()
-                        .unwrap()
-                        .weight()
-                        .len() as i32)
-                });
-                right_nodes.sort_by_key(|&x| {
-                    -(g.edges_connecting(centromere, x)
-                        .next()
-                        .unwrap()
-                        .weight()
-                        .len() as i32)
-                });
-
-                fn draw_arcs(
+            fn draw_arcs(
+                g: &poa::POAGraph,
+                n: NodeIndex,
+                x: i32,
+                y: i32,
+                dir: Direction,
+                ranks: &mut HashMap<NodeIndex, (i32, i32)>,
+            ) {
+                fn get_nodes(
                     g: &poa::POAGraph,
                     n: NodeIndex,
-                    x: i32,
-                    y: i32,
-                    dir: Direction,
-                    ranks: &mut HashMap<NodeIndex, (i32, i32)>,
+                    ns: &mut Vec<NodeIndex>,
+                    dir: petgraph::Direction,
                 ) {
-                    fn get_nodes(
-                        g: &poa::POAGraph,
-                        n: NodeIndex,
-                        ns: &mut Vec<NodeIndex>,
-                        dir: petgraph::Direction,
-                    ) {
-                        if !ns.contains(&n) {
-                            ns.push(n);
-                            let mut es = g.edges_directed(n, dir).collect::<Vec<_>>();
-                            es.sort_by(|e2, e1| e2.weight().len().cmp(&e1.weight().len()));
-                            for e in es {
-                                let o = if e.source() == n {
-                                    e.target()
-                                } else {
-                                    e.source()
-                                };
-                                get_nodes(g, o, ns, dir);
-                            }
-                        }
-                    }
-
-                    let mut all_nodes = Vec::<NodeIndex>::new();
-                    get_nodes(g, n, &mut all_nodes, dir);
-                    let mut tail = toposort(g, None)
-                        .unwrap()
-                        .into_iter()
-                        .filter(|n| all_nodes.contains(n))
-                        .collect::<Vec<_>>();
-
-                    if dir == Incoming {
-                        tail.reverse();
-                    }
-
-                    for (k, n) in tail.into_iter().enumerate() {
-                        if !ranks.contains_key(&n) {
-                            if dir == Outgoing {
-                                ranks.insert(n, (x + k as i32, y));
+                    if !ns.contains(&n) {
+                        ns.push(n);
+                        let mut es = g.edges_directed(n, dir).collect::<Vec<_>>();
+                        es.sort_by(|e2, e1| e2.weight().len().cmp(&e1.weight().len()));
+                        for e in es {
+                            let o = if e.source() == n {
+                                e.target()
                             } else {
-                                ranks.insert(n, (x - k as i32, y));
-                            }
+                                e.source()
+                            };
+                            get_nodes(g, o, ns, dir);
                         }
                     }
                 }
 
-                let mut k = 0;
-                for n in left_nodes.iter() {
-                    if !ranks_left.contains_key(n) {
-                        draw_arcs(&g, *n, -1, k as i32, Incoming, &mut ranks_left);
-                        k += 1;
-                    }
-                }
-                k = 0;
-                for n in right_nodes.iter() {
-                    if !ranks_right.contains_key(n) {
-                        draw_arcs(&g, *n, 1, k as i32, Outgoing, &mut ranks_right);
-                        k += 1;
-                    }
-                }
-                for (k, n) in right_nodes.iter().enumerate() {
-                    draw_arcs(&g, *n, 1, k as i32, Outgoing, &mut ranks_right);
+                let mut all_nodes = Vec::<NodeIndex>::new();
+                get_nodes(g, n, &mut all_nodes, dir);
+                let mut tail = toposort(g, None)
+                    .unwrap()
+                    .into_iter()
+                    .filter(|n| all_nodes.contains(n))
+                    .collect::<Vec<_>>();
+
+                if dir == Incoming {
+                    tail.reverse();
                 }
 
-                let mut ranks: HashMap<NodeIndex, (i32, i32)> =
-                    ranks_left.into_iter().chain(ranks_right).collect();
-                ranks.insert(centromere, (0, 0));
-
-                let xbase = xlabels;
-                for e in g.edge_references() {
-                    let (_x1, _y1) = *ranks.get(&e.source()).unwrap_or(&(0, 0));
-                    let (_x2, _y2) = *ranks.get(&e.target()).unwrap_or(&(0, 0));
-                    let ((x1, y1), (x2, y2)) = ((_x1 as f32, _y1 as f32), (_x2 as f32, _y2 as f32));
-
-                    if (x1 - x2).abs() > 1. {
-                        let dy = 10.;
-                        svg.line()
-                            .from_points([
-                                (xbase + x1 as f32 * 20. + 5., y + y1 as f32 * 20. + 5.),
-                                (
-                                    xbase + (x1 + x2) as f32 / 2. * 20. + 5.,
-                                    y + y1 as f32 * 20. + 5. + dy,
-                                ),
-                                (xbase + x2 as f32 * 20. + 5., y + y2 as f32 * 20. + 5.),
-                            ])
-                            .style(|s| {
-                                s.stroke_color(StyleColor::RGB(50, 50, 50))
-                                    .stroke_width(e.weight().len() as f32)
-                                    .fill_opacity(0.)
-                            });
-                    } else {
-                        svg.line()
-                            .from_coords(
-                                xbase + x1 as f32 * 20. + 5.,
-                                y + y1 as f32 * 20. + 5.,
-                                xbase + x2 as f32 * 20. + 5.,
-                                y + y2 as f32 * 20. + 5.,
-                            )
-                            .style(|s| {
-                                s.stroke_color(StyleColor::RGB(50, 50, 50))
-                                    .stroke_width(e.weight().len() as f32)
-                            });
+                for (k, n) in tail.into_iter().enumerate() {
+                    if !ranks.contains_key(&n) {
+                        if dir == Outgoing {
+                            ranks.insert(n, (x + k as i32, y));
+                        } else {
+                            ranks.insert(n, (x - k as i32, y));
+                        }
                     }
-                }
-                for (n, (xi, yi)) in ranks.iter() {
-                    svg.polygon()
-                        .from_pos_dims(xbase + *xi as f32 * 20., y + *yi as f32 * 20., 10., 10.)
-                        .set_hover(g[*n].nucs.values().next().unwrap())
-                        .style(|s| s.fill_color(gene2color(g[*n].nucs.values().next().unwrap())));
                 }
             }
 
-            y += 300.;
+            let mut k = 0;
+            for n in left_nodes.iter() {
+                if !ranks_left.contains_key(n) {
+                    draw_arcs(&g, *n, -1, k as i32, Incoming, &mut ranks_left);
+                    k += 1;
+                }
+            }
+
+            let mut k = 0;
+            for n in right_nodes.iter() {
+                if !ranks_right.contains_key(n) {
+                    draw_arcs(&g, *n, 1, k as i32, Outgoing, &mut ranks_right);
+                    k += 1;
+                }
+            }
+
+            let mut ranks: HashMap<NodeIndex, (i32, i32)> =
+                ranks_left.into_iter().chain(ranks_right).collect();
+            ranks.insert(centromere, (0, 0));
+
+            let group = svg.group();
+            for e in g.edge_references() {
+                let (_x1, _y1) = *ranks.get(&e.source()).unwrap_or(&(0, 0));
+                let (_x2, _y2) = *ranks.get(&e.target()).unwrap_or(&(0, 0));
+                let ((x1, y1), (x2, y2)) = ((_x1 as f32, _y1 as f32), (_x2 as f32, _y2 as f32));
+
+                if (x1 - x2).abs() > 1. {
+                    let dy = 10.;
+                    group
+                        .line()
+                        .from_points([
+                            (x1 as f32 * 20. + 5., y1 as f32 * 20. + 5.),
+                            ((x1 + x2) as f32 / 2. * 20. + 5., y1 as f32 * 20. + 5. + dy),
+                            (x2 as f32 * 20. + 5., y2 as f32 * 20. + 5.),
+                        ])
+                        .style(|s| {
+                            s.stroke_color(StyleColor::RGB(50, 50, 50))
+                                .stroke_width(e.weight().len() as f32)
+                                .fill_opacity(0.)
+                        });
+                } else {
+                    group
+                        .line()
+                        .from_coords(
+                            x1 as f32 * 20. + 5.,
+                            y1 as f32 * 20. + 5.,
+                            x2 as f32 * 20. + 5.,
+                            y2 as f32 * 20. + 5.,
+                        )
+                        .style(|s| {
+                            s.stroke_color(StyleColor::RGB(50, 50, 50))
+                                .stroke_width(e.weight().len() as f32)
+                        });
+                }
+            }
+            for (n, (xi, yi)) in ranks.iter() {
+                group
+                    .polygon()
+                    .from_pos_dims(*xi as f32 * 20., *yi as f32 * 20., 10., 10.)
+                    .set_hover(g[*n].nucs.values().next().unwrap())
+                    .style(|s| s.fill_color(gene2color(g[*n].nucs.values().next().unwrap())));
+            }
+            let leftmost = group.bbox().x1;
+            let graph_height = group.dims().1;
+            let text_height = 0.;
+            group.shift(xlabels - leftmost, y);
+
+            y += graph_height.max(text_height) + 40.;
 
             svg.line()
                 .from_coords(xoffset, old_y, xoffset, y - 20.)
