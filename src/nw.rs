@@ -498,12 +498,11 @@ pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
                 let rev_seq = seq.iter().cloned().rev().collect();
                 let (direct_score, direct_alignment) = affine_sw(&g, seq, &settings);
                 let (reverse_score, reverse_alignment) = affine_sw(&g, &rev_seq, &settings);
-                let alignment = if direct_score >= reverse_score {
-                    &direct_alignment
+                if direct_score >= reverse_score {
+                    add_alignment(&mut g, &direct_alignment, seq, id).map(|new| (id, new))
                 } else {
-                    &reverse_alignment
-                };
-                add_alignment(&mut g, &alignment, seq, id).map(|new| (id, new))
+                    add_alignment(&mut g, &reverse_alignment, &rev_seq, id).map(|new| (id, new))
+                }
             }
         })
         .collect::<HashMap<_, _>>();
