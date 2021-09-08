@@ -431,6 +431,7 @@ fn draw_clustered(
         let old_y = y;
         y = draw_clustered(
             svg,
+            db,
             depth,
             tree,
             &tree[node.children()[0]],
@@ -451,6 +452,7 @@ fn draw_clustered(
             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
         y = draw_clustered(
             svg,
+            db,
             depth,
             tree,
             &tree[node.children()[1]],
@@ -474,6 +476,7 @@ fn draw_clustered(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
             y = draw_clustered(
                 svg,
+                db,
                 depth,
                 tree,
                 &tree[child],
@@ -498,7 +501,7 @@ fn draw_clustered(
                             Ok((ancestral, species, chr, pos))
                         })
                     {
-                        let (left, right) = tails(&mut db, &species, &chr, pos, WINDOW);
+                        let (left, right) = tails(db, &species, &chr, pos, WINDOW);
                         Some(
                             left.iter()
                                 .map(|g| &g.0)
@@ -739,6 +742,6 @@ fn main() {
         .get_matches();
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
-        process_file(filename, value_t!(args, "DB", String).unwrap());
+        process_file(filename, &value_t!(args, "DB", String).unwrap());
     }
 }
