@@ -12,8 +12,8 @@ Length     = _{ float }
 nhx_safe   = _{ !( ":" | "," | ";" | "(" | ")" | "[" | "]" | "=" | WHITESPACE ) ~ ANY }
 nhx_key    = { nhx_safe+ }
 nhx_value  = { nhx_safe+ }
-safe       = _{ !( ":" | "," | ";" | "(" | ")" | WHITESPACE ) ~ ANY }
-name       = { safe+ }
+name_safe  = _{ !( ":" | "," | ";" | "(" | ")" | "[" | "]" | WHITESPACE ) ~ ANY }
+name       = { name_safe+ }
 float      = @{
                   "-"?
                   ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*)
