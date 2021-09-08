@@ -4,7 +4,7 @@ Tree       = _{ SOI ~ Node ~ ";" ~ EOI }
 Node       = _{ (Leaf | Clade)? }
 Leaf       = { name ~ Attributes? }
 Clade      = { "(" ~ Node? ~ ("," ~ Node?)* ~ ")" ~ name? ~ Attributes? }
-Attributes = { ":" ~ Length ~ Nhx? }
+Attributes = { (":" ~ Length)? ~ Nhx? }
 Nhx        = _{ "[&&NHX" ~ NhxEntry+ ~ "]" }
 NhxEntry   = { ":" ~ nhx_key ~ "=" ~ nhx_value }
 Length     = _{ float }
