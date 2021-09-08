@@ -410,6 +410,7 @@ fn draw_links(
 
 fn draw_clustered(
     svg: &mut SvgDrawing,
+    db: &mut Connection,
     depth: f32,
     tree: &Tree,
     node: &Node,
@@ -465,11 +466,6 @@ fn draw_clustered(
     } else {
         let leaves = tree.non_d_descendants(node.id);
         let dups = tree.d_descendants(node.id);
-        let mut db = Connection::open_with_flags(
-            "/home/franklin/work/duplications/data/db.sqlite",
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap();
 
         let old_y = y;
         for &child in dups.iter() {
@@ -688,9 +684,11 @@ fn draw_clustered(
     y
 }
 
-fn process_file(filename: &str) {
+fn process_file(filename: &str, db_filename: &str) {
     println!("Processing {}", filename);
     let t = Tree::from_filename(filename).unwrap();
+    let mut db =
+        Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
 
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
@@ -714,7 +712,7 @@ fn process_file(filename: &str) {
     // );
     // draw_links(&mut svg, &links, 50.0, xlabels);
 
-    draw_clustered(&mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
+    draw_clustered(&mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
 
     svg.auto_fit();
     let mut out = File::create(&format!("{}.svg", filename)).unwrap();
@@ -731,9 +729,16 @@ fn main() {
                 .required(true)
                 .multiple(true),
         )
+        .arg(
+            Arg::with_name("DB")
+                .help("Sets the database to use")
+                .required(true)
+                .short("D")
+                .long("db"),
+        )
         .get_matches();
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
-        process_file(filename);
+        process_file(filename, value_t!(args, "DB", String).unwrap());
     }
 }
