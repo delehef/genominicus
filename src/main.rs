@@ -39,7 +39,7 @@ const BRANCH_WIDTH: f32 = 20.;
 const FONT_SIZE: f32 = 10.;
 
 const ANCESTRAL_QUERY: &str =
-    concat!("select gene, ancestral, species, chr, start, direction from genomes where protein=?",);
+    concat!("select gene, ancestral, species, chr, start, direction from genomes where gene=?",);
 const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
 const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
 
@@ -221,6 +221,7 @@ fn draw_gene<'a>(
 
 fn draw_tree(
     svg: &mut SvgDrawing,
+    db: &mut Connection,
     depth: f32,
     tree: &Tree,
     node: &Node,
@@ -230,11 +231,6 @@ fn draw_tree(
     width: f32,
     links: &mut Vec<(Vec<String>, String, Vec<String>)>,
 ) -> f32 {
-    let mut db = Connection::open_with_flags(
-        "/home/franklin/work/duplications/data/db.sqlite",
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
     let mut y = yoffset;
     let mut old_y = 0.;
     for (i, child) in node.children().iter().map(|i| &tree[*i]).enumerate() {
@@ -277,8 +273,8 @@ fn draw_tree(
                         Ok((gene, ancestral, species, chr, pos, direction))
                     })
                 {
-                    let proto_lefts = left_tail(&mut db, &species, &chr, pos, WINDOW);
-                    let proto_rights = right_tail(&mut db, &species, &chr, pos, WINDOW);
+                    let proto_lefts = left_tail(db, &species, &chr, pos, WINDOW);
+                    let proto_rights = right_tail(db, &species, &chr, pos, WINDOW);
                     let (lefts, rights) = if true {
                         (proto_lefts, proto_rights)
                     } else {
@@ -336,6 +332,7 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
             y = draw_tree(
                 svg,
+                db,
                 depth,
                 tree,
                 child,
@@ -687,7 +684,7 @@ fn draw_clustered(
     y
 }
 
-fn process_file(filename: &str, db_filename: &str) {
+fn process_file(filename: &str, db_filename: &str, graph_type: &str) {
     println!("Processing {}", filename);
     let t = Tree::from_filename(filename).unwrap();
     let mut db =
@@ -708,14 +705,20 @@ fn process_file(filename: &str, db_filename: &str) {
         .pos(FONT_SIZE, FONT_SIZE)
         .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
-    // draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
-    // let mut links = Vec::new();
-    // draw_tree(
-    //     &mut svg, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
-    // );
-    // draw_links(&mut svg, &links, 50.0, xlabels);
-
-    draw_clustered(&mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
+    match graph_type {
+      "flat" => {
+        draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
+        let mut links = Vec::new();
+        draw_tree(
+            &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+        );
+        draw_links(&mut svg, &links, 50.0, xlabels);
+      },
+      "condensed" => {
+        draw_clustered(&mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
+      },
+      _ => unimplemented!()
+    };
 
     svg.auto_fit();
     let mut out = File::create(&format!("{}.svg", filename)).unwrap();
@@ -727,21 +730,27 @@ fn main() {
         .version(clap::crate_version!())
         .author(clap::crate_authors!())
         .arg(
+            Arg::with_name("type")
+                .help("The graph type to use")
+                .required(true)
+                .possible_values(&["flat", "condensed"])
+                .index(1)
+        )
+        .arg(
+            Arg::with_name("database")
+                .help("The database to use")
+                .required(true)
+                .index(2)
+        )
+        .arg(
             Arg::with_name("FILE")
                 .help("Sets the input file to use")
                 .required(true)
                 .multiple(true),
         )
-        .arg(
-            Arg::with_name("DB")
-                .help("Sets the database to use")
-                .required(true)
-                .short("D")
-                .long("db"),
-        )
         .get_matches();
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
-        process_file(filename, &value_t!(args, "DB", String).unwrap());
+        process_file(filename, &value_t!(args, "database", String).unwrap(), &value_t!(args, "type", String).unwrap());
     }
 }
