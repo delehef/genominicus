@@ -261,7 +261,7 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             if let Some(name) = &child.name {
-                let protein_name = name.split('_').next().unwrap();
+                let protein_name = name.split(&['_', '#'][..]).next().unwrap();
                 if let Ok((gene, ancestral, species, chr, pos, direction)) =
                     db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                         let gene: String = r.get("gene").unwrap();
@@ -488,7 +488,7 @@ fn draw_clustered(
             .iter()
             .filter_map(|&l| {
                 if let Some(name) = &tree[l].name {
-                    let protein_name = name.split('_').next().unwrap();
+                    let protein_name = name.split(&['_', '#'][..]).next().unwrap();
                     if let Ok((ancestral, species, chr, pos)) =
                         db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                             let ancestral: String = r.get("ancestral").unwrap();
