@@ -233,7 +233,25 @@ fn draw_tree(
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
-    for (i, child) in node.children().iter().map(|i| &tree[*i]).enumerate() {
+    let mut children = node.children().iter().map(|i| &tree[*i]).collect::<Vec<_>>();
+    children.sort_by_cached_key(|x| {
+      if let Some(name) = &x.name {
+        let protein_name = name.split(&['_', '#'][..]).next().unwrap();
+        if let Ok(species) =
+            db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
+                let species: String = r.get("species").unwrap();
+                Ok(species)
+            })
+        {
+          species
+        } else {
+          "zzy".to_string()
+        }
+      } else {
+        "zzz".to_string()
+      }
+    });
+    for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
                 .from_coords(xoffset, old_y, xoffset, y)
