@@ -114,9 +114,10 @@ fn tails(
 
 fn draw_background(
     svg: &mut SvgDrawing,
+    db: &mut Connection,
     depth: f32,
     tree: &Tree,
-    n_: usize,
+    node: &Node,
     xoffset: f32,
     yoffset: f32,
     xlabels: f32,
@@ -124,16 +125,37 @@ fn draw_background(
 ) -> f32 {
     let mut y = yoffset;
 
-    for &n in tree[n_].children().iter() {
-        let child = &tree[n];
+    let mut children = node.children().iter().map(|i| &tree[*i]).collect::<Vec<_>>();
+    children.sort_by_cached_key(|x| {
+      if let Some(name) = &x.name {
+        let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
+        protein_name.pop();
+        let protein_name = protein_name.join("_");
+        if let Ok(species) =
+            db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
+                let species: String = r.get("species").unwrap();
+                Ok(species)
+            })
+        {
+          species
+        } else {
+          "zzy".to_string()
+        }
+      } else {
+        "zzz".to_string()
+      }
+    });
+
+    for &child in children.iter() {
         let new_y = if child.is_leaf() {
             y + 20.
         } else {
             draw_background(
                 svg,
+                db,
                 depth,
                 tree,
-                n,
+                child,
                 xoffset + BRANCH_WIDTH,
                 y,
                 xlabels,
@@ -141,7 +163,7 @@ fn draw_background(
             )
         };
 
-        if tree[n_].is_duplication() {
+        if node.is_duplication() {
             let d = xoffset / depth;
             svg.polygon()
                 .from_pos_dims(
@@ -236,7 +258,9 @@ fn draw_tree(
     let mut children = node.children().iter().map(|i| &tree[*i]).collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
       if let Some(name) = &x.name {
-        let protein_name = name.split(&['_', '#'][..]).next().unwrap();
+        let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
+        protein_name.pop();
+        let protein_name = protein_name.join("_");
         if let Ok(species) =
             db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                 let species: String = r.get("species").unwrap();
@@ -293,7 +317,7 @@ fn draw_tree(
                 {
                     let proto_lefts = left_tail(db, &species, &chr, pos, WINDOW);
                     let proto_rights = right_tail(db, &species, &chr, pos, WINDOW);
-                    let (lefts, rights) = if true {
+                    let (lefts, rights) = if direction == "+" {
                         (proto_lefts, proto_rights)
                     } else {
                         (proto_rights, proto_lefts)
@@ -725,7 +749,7 @@ fn process_file(filename: &str, db_filename: &str, graph_type: &str) {
 
     match graph_type {
       "flat" => {
-        draw_background(&mut svg, depth, &t, 0, 10.0, 50.0, xlabels, width);
+        draw_background(&mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
         let mut links = Vec::new();
         draw_tree(
             &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
