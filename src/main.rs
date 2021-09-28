@@ -333,7 +333,13 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in lefts.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
+                        let mut drawn = draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
+                        if g.0 == ancestral {
+                          drawn.style(|s| {
+                              s.stroke_width(2.)
+                                  .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                          });
+                        }
                     }
 
                     // The Gene
@@ -354,7 +360,13 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in rights.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
+                        let drawn = draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
+                        if g.0 == ancestral {
+                          drawn.style(|s| {
+                              s.stroke_width(2.)
+                                  .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                          });
+                        }
                     }
                     links.push((
                         lefts.iter().map(|x| x.0.clone()).collect(),
