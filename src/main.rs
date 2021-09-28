@@ -1,16 +1,12 @@
 use crate::nhx::*;
 use clap::*;
 use colorsys::{Hsl, Rgb};
-use petgraph::{
-    algo::dijkstra,
-    graph::{DiGraph, NodeIndex, UnGraph},
-};
+use petgraph::graph::NodeIndex;
 use petgraph::{algo::toposort, Direction};
 use petgraph::{
     dot::{Config, Dot},
     visit::EdgeRef,
 };
-use poa::POA;
 use rusqlite::*;
 use std::fs::File;
 use std::io::prelude::*;
@@ -333,7 +329,7 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in lefts.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        let mut drawn = draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
+                        let mut drawn = draw_gene(svg, xstart, y, g.1.to_string() == direction, gene2color(&g.0), &g.0);
                         if g.0 == ancestral {
                           drawn.style(|s| {
                               s.stroke_width(2.)
@@ -360,7 +356,7 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in rights.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        let drawn = draw_gene(svg, xstart, y, g.1 == '+', gene2color(&g.0), &g.0);
+                        let drawn = draw_gene(svg, xstart, y, g.1.to_string() == direction, gene2color(&g.0), &g.0);
                         if g.0 == ancestral {
                           drawn.style(|s| {
                               s.stroke_width(2.)
