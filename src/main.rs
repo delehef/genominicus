@@ -121,25 +121,27 @@ fn draw_background(
 ) -> f32 {
     let mut y = yoffset;
 
-    let mut children = node.children().iter().map(|i| &tree[*i]).collect::<Vec<_>>();
+    let mut children = node
+        .children()
+        .iter()
+        .map(|i| &tree[*i])
+        .collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
-      if let Some(name) = &x.name {
-        let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
-        protein_name.pop();
-        let protein_name = protein_name.join("_");
-        if let Ok(species) =
-            db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
+        if let Some(name) = &x.name {
+            let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
+            protein_name.pop();
+            let protein_name = protein_name.join("_");
+            if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                 let species: String = r.get("species").unwrap();
                 Ok(species)
-            })
-        {
-          species
+            }) {
+                species
+            } else {
+                "zzy".to_string()
+            }
         } else {
-          "zzy".to_string()
+            "zzz".to_string()
         }
-      } else {
-        "zzz".to_string()
-      }
     });
 
     for &child in children.iter() {
@@ -251,25 +253,27 @@ fn draw_tree(
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
-    let mut children = node.children().iter().map(|i| &tree[*i]).collect::<Vec<_>>();
+    let mut children = node
+        .children()
+        .iter()
+        .map(|i| &tree[*i])
+        .collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
-      if let Some(name) = &x.name {
-        let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
-        protein_name.pop();
-        let protein_name = protein_name.join("_");
-        if let Ok(species) =
-            db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
+        if let Some(name) = &x.name {
+            let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
+            protein_name.pop();
+            let protein_name = protein_name.join("_");
+            if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                 let species: String = r.get("species").unwrap();
                 Ok(species)
-            })
-        {
-          species
+            }) {
+                species
+            } else {
+                "zzy".to_string()
+            }
         } else {
-          "zzy".to_string()
+            "zzz".to_string()
         }
-      } else {
-        "zzz".to_string()
-      }
     });
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
@@ -756,18 +760,22 @@ fn process_file(filename: &str, db_filename: &str, graph_type: &str) {
         .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
     match graph_type {
-      "flat" => {
-        draw_background(&mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
-        let mut links = Vec::new();
-        draw_tree(
-            &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
-        );
-        draw_links(&mut svg, &links, 50.0, xlabels);
-      },
-      "condensed" => {
-        draw_clustered(&mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width);
-      },
-      _ => unimplemented!()
+        "flat" => {
+            draw_background(
+                &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+            );
+            let mut links = Vec::new();
+            draw_tree(
+                &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+            );
+            draw_links(&mut svg, &links, 50.0, xlabels);
+        }
+        "condensed" => {
+            draw_clustered(
+                &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+            );
+        }
+        _ => unimplemented!(),
     };
 
     svg.auto_fit();
@@ -784,13 +792,13 @@ fn main() {
                 .help("The graph type to use")
                 .required(true)
                 .possible_values(&["flat", "condensed"])
-                .index(1)
+                .index(1),
         )
         .arg(
             Arg::with_name("database")
                 .help("The database to use")
                 .required(true)
-                .index(2)
+                .index(2),
         )
         .arg(
             Arg::with_name("FILE")
