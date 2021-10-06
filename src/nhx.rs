@@ -59,6 +59,25 @@ impl Tree {
         print_node(&self.nodes, 0, 0);
     }
 
+    pub fn descendants(&self, n: usize) -> Vec<usize> {
+        fn find_descendants(t: &Tree, n: usize, ax: &mut Vec<usize>) {
+            ax.push(t[n].id);
+            for &c in t[n].children.iter() {
+                find_descendants(t, c, ax);
+            }
+        }
+
+        let mut r = vec![];
+        for &c in self[n].children.iter() {
+            find_descendants(self, c, &mut r);
+        }
+        r
+    }
+
+    pub fn siblings(&self, n: usize) -> Vec<usize> {
+        self.descendants(self[n].parent).into_iter().filter(|&nn| nn != n).filter(|n| self[*n].is_leaf()).collect()
+    }
+
     pub fn d_descendants(&self, n: usize) -> Vec<usize> {
         fn find_dups(t: &Tree, n: usize, ax: &mut Vec<usize>) {
             if t[n].is_duplication() {

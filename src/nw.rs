@@ -475,10 +475,10 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
 
 pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
     let settings = AffineNWSettings {
-        matches: 5,
-        mismatches: -50,
+        matches: 10,
+        mismatches: -0,
         open_gap: -1,
-        extend_gap: 0,
+        extend_gap: -1,
     };
     let mut g = POAGraph::new();
     // We sort the input sequences for two reasons:
@@ -510,7 +510,7 @@ pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
     (g, starts)
 }
 
-pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, String> {
+pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, Vec<String>> {
     let nodes = petgraph::algo::toposort(g, None).ok().unwrap();
     let rank_to_column = nodes
         .iter()
@@ -521,7 +521,7 @@ pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, String> {
     starts
         .iter()
         .map(|(seq_id, start)| {
-            let mut seq_out = vec!["------------------".to_owned(); nodes.len()];
+            let mut seq_out = vec!["-".to_owned(); nodes.len()];
             let mut node = *start;
 
             loop {
@@ -548,7 +548,7 @@ pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, String> {
             (seq_id, seq_out)
         })
         .fold(HashMap::new(), |mut ax, (&seq_id, seq_out)| {
-            ax.insert(seq_id, seq_out.join(""));
+            ax.insert(seq_id, seq_out);
             ax
         })
 }

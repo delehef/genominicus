@@ -1,0 +1,73 @@
+body {
+    /* background-color: #ccc; */
+    font-size: 10;
+    margin: auto;
+    max-width: 2000px;
+}
+
+div.node {
+    font-family: monospace;
+    padding: 1rem
+    padding-left: 2rem;
+    margin-left: 2rem;
+    text-align: right;
+    border-left: 1px solid black;
+    /* border-top: 1px solid black; */
+}
+.intrinsic {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    height: 2rem;
+}
+.nametag {
+    margin-right: 0.5rem;
+    text-shadow: 0 0 1px #888;
+}
+.nametag:last-child {
+    margin-right: 1rem;
+}
+
+div.node-container {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+div.node-container > .intrinsic {
+    display: none;
+}
+div.node-container.condensed > .intrinsic {
+    display: flex;
+}
+
+div.node-container.condensed {
+    background-color: rgba(100, 100, 255, 0.4);
+}
+
+div.node-container:hover {
+    background-color: rgba(100, 100, 255, 0.2);
+}
+
+div.node.condensed > div.node {
+    display: none;
+}
+
+div.node > svg {
+    padding-left: 1rem;
+}
+
+.main-gene {
+    stroke: #000;
+    stroke-width: 4;
+}
+
+.gene {
+    stroke: #323232;
+    stroke-width: 0.5;
+}
+
+.highlight-gene {
+    stroke: #111;
+    stroke-width: 2;
+    filter: drop-shadow(0 0 3px #993333);
+}

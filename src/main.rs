@@ -8,11 +8,13 @@ use petgraph::{
     visit::EdgeRef,
 };
 use rusqlite::*;
-use std::fs::File;
+use serde::{Deserialize, Serialize};
+use serde_json::Result;
 use std::io::prelude::*;
 use std::path::Path;
 use std::{borrow::BorrowMut, collections::HashSet};
 use std::{collections::HashMap, usize};
+use std::{fs::File, io::BufReader};
 use svarog::*;
 use Direction::{Incoming, Outgoing};
 mod nhx;
@@ -24,6 +26,35 @@ pub type Nucleotide = String;
 pub type Sequence = Vec<Nucleotide>;
 pub type Sequences = HashMap<SeqID, Sequence>;
 
+#[derive(Serialize, Deserialize)]
+struct PolyGene {
+    genes: Vec<(Gene, f32)>,
+}
+#[derive(Serialize, Deserialize)]
+struct Gene {
+    color: String,
+    name: String,
+}
+#[derive(Serialize, Deserialize)]
+struct Landscape {
+    lefts: Vec<Gene>,
+    me: Gene,
+    rights: Vec<Gene>,
+}
+#[derive(Serialize, Deserialize)]
+struct HtmlNode {
+    species: String,
+    chr: String,
+    gene: String,
+    ancestral: String,
+    color: String,
+    children: Vec<HtmlNode>,
+
+    isDuplication: bool,
+    repr: Landscape,
+    clustered: Option<Vec<PolyGene>>,
+}
+
 fn nuc_to_str(nuc: &Nucleotide) -> String {
     nuc.to_string()
 }
@@ -33,6 +64,10 @@ const GENE_WIDTH: f32 = 15.;
 const GENE_SPACING: f32 = 5.;
 const BRANCH_WIDTH: f32 = 20.;
 const FONT_SIZE: f32 = 10.;
+
+const MARKER: &str = "=======FINAL=======";
+const INDEL: &str = "-";
+const EMPTY: &str = "";
 
 const ANCESTRAL_QUERY: &str =
     concat!("select gene, ancestral, species, chr, start, direction from genomes where gene=?",);
@@ -128,7 +163,7 @@ fn draw_background(
         .collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
         if let Some(name) = &x.name {
-            let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
+            let mut protein_name = name.split(&['#'][..]).collect::<Vec<_>>();
             protein_name.pop();
             let protein_name = protein_name.join("_");
             if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
@@ -242,6 +277,8 @@ fn draw_gene<'a>(
 fn draw_tree(
     svg: &mut SvgDrawing,
     db: &mut Connection,
+    reversed: &Option<HashMap<(String, String), bool>>,
+    reference: Option<String>,
     depth: f32,
     tree: &Tree,
     node: &Node,
@@ -260,7 +297,7 @@ fn draw_tree(
         .collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
         if let Some(name) = &x.name {
-            let mut protein_name = name.split(&['_', '#'][..]).collect::<Vec<_>>();
+            let mut protein_name = name.split(&['#'][..]).collect::<Vec<_>>();
             protein_name.pop();
             let protein_name = protein_name.join("_");
             if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
@@ -275,6 +312,7 @@ fn draw_tree(
             "zzz".to_string()
         }
     });
+    let reference = children.get(0).and_then(|c| c.name.clone());
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
@@ -303,7 +341,7 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             if let Some(name) = &child.name {
-                let protein_name = name.split(&['_', '#'][..]).next().unwrap();
+                let protein_name = name.split(&['#'][..]).next().unwrap();
                 if let Ok((gene, ancestral, species, chr, pos, direction)) =
                     db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                         let gene: String = r.get("gene").unwrap();
@@ -317,10 +355,22 @@ fn draw_tree(
                 {
                     let proto_lefts = left_tail(db, &species, &chr, pos, WINDOW);
                     let proto_rights = right_tail(db, &species, &chr, pos, WINDOW);
-                    let (lefts, rights) = if direction == "+" {
-                        (proto_lefts, proto_rights)
-                    } else {
+                    let refp = reference
+                        .clone()
+                        .unwrap()
+                        .split("#")
+                        .next()
+                        .unwrap()
+                        .to_string();
+                    let (lefts, rights) = if protein_name != refp
+                        && *reversed
+                            .as_ref()
+                            .and_then(|r| r.get(&(refp, protein_name.to_owned())))
+                            .unwrap_or(&false)
+                    {
                         (proto_rights, proto_lefts)
+                    } else {
+                        (proto_lefts, proto_rights)
                     };
 
                     // Gene/protein name
@@ -333,39 +383,53 @@ fn draw_tree(
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in lefts.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        let mut drawn = draw_gene(svg, xstart, y, g.1.to_string() == direction, gene2color(&g.0), &g.0);
+                        let drawn = draw_gene(
+                            svg,
+                            xstart,
+                            y,
+                            g.1.to_string() == direction,
+                            gene2color(&g.0),
+                            &g.0,
+                        );
                         if g.0 == ancestral {
-                          drawn.style(|s| {
-                              s.stroke_width(2.)
-                                  .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                          });
+                            drawn.style(|s| {
+                                s.stroke_width(2.)
+                                    .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                            });
                         }
                     }
 
                     // The Gene
-                    draw_gene(
-                        svg,
-                        xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
-                        y,
-                        true,
-                        gene2color(&ancestral),
-                        &ancestral,
-                    )
-                    .style(|s| {
-                        s.stroke_width(2.)
-                            .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                    });
+                    // draw_gene(
+                    //     svg,
+                    //     xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
+                    //     y,
+                    //     true,
+                    //     gene2color(&ancestral),
+                    //     &ancestral,
+                    // )
+                    // .style(|s| {
+                    //     s.stroke_width(2.)
+                    //         .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                    // });
 
                     // Right tail
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
                     for (k, g) in rights.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
-                        let drawn = draw_gene(svg, xstart, y, g.1.to_string() == direction, gene2color(&g.0), &g.0);
+                        let drawn = draw_gene(
+                            svg,
+                            xstart,
+                            y,
+                            g.1.to_string() == direction,
+                            gene2color(&g.0),
+                            &g.0,
+                        );
                         if g.0 == ancestral {
-                          drawn.style(|s| {
-                              s.stroke_width(2.)
-                                  .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                          });
+                            drawn.style(|s| {
+                                s.stroke_width(2.)
+                                    .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                            });
                         }
                     }
                     links.push((
@@ -387,6 +451,8 @@ fn draw_tree(
             y = draw_tree(
                 svg,
                 db,
+                reversed,
+                reference.clone(),
                 depth,
                 tree,
                 child,
@@ -462,6 +528,7 @@ fn draw_links(
 fn draw_clustered(
     svg: &mut SvgDrawing,
     db: &mut Connection,
+    reversed: &Option<HashMap<(String, String), bool>>,
     depth: f32,
     tree: &Tree,
     node: &Node,
@@ -483,6 +550,7 @@ fn draw_clustered(
         y = draw_clustered(
             svg,
             db,
+            reversed,
             depth,
             tree,
             &tree[node.children()[0]],
@@ -504,6 +572,7 @@ fn draw_clustered(
         y = draw_clustered(
             svg,
             db,
+            reversed,
             depth,
             tree,
             &tree[node.children()[1]],
@@ -528,6 +597,7 @@ fn draw_clustered(
             y = draw_clustered(
                 svg,
                 db,
+                reversed,
                 depth,
                 tree,
                 &tree[child],
@@ -542,7 +612,7 @@ fn draw_clustered(
             .iter()
             .filter_map(|&l| {
                 if let Some(name) = &tree[l].name {
-                    let protein_name = name.split(&['_', '#'][..]).next().unwrap();
+                    let protein_name = name.split(&['#'][..]).next().unwrap();
                     if let Ok((ancestral, species, chr, pos)) =
                         db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                             let ancestral: String = r.get("ancestral").unwrap();
@@ -557,7 +627,7 @@ fn draw_clustered(
                             left.iter()
                                 .map(|g| &g.0)
                                 .rev()
-                                .chain(["=======FINAL=======".to_owned()].iter())
+                                .chain([MARKER.to_owned()].iter())
                                 .chain(right.iter().map(|g| &g.0))
                                 .cloned()
                                 .collect::<Vec<String>>(),
@@ -585,7 +655,7 @@ fn draw_clustered(
 
             let centromere = g
                 .node_indices()
-                .filter(|n| g[*n].nucs.values().any(|v| v == "=======FINAL======="))
+                .filter(|n| g[*n].nucs.values().any(|v| v == MARKER))
                 .next()
                 .unwrap();
 
@@ -738,11 +808,267 @@ fn draw_clustered(
     y
 }
 
-fn process_file(filename: &str, db_filename: &str, graph_type: &str) {
+fn get_gene(
+    db: &mut Connection,
+    name: &str,
+) -> std::result::Result<(String, String, String, i32), rusqlite::Error> {
+    db.query_row(ANCESTRAL_QUERY, &[&name], |r| {
+        let ancestral: String = r.get("ancestral").unwrap();
+        let species: String = r.get("species").unwrap();
+        let chr: String = r.get("chr").unwrap();
+        let pos: i32 = r.get("start").unwrap();
+        Ok((ancestral, species, chr, pos))
+    })
+}
+
+fn draw_html(
+    db: &mut Connection,
+    reversed: &Option<HashMap<(String, String), bool>>,
+    tree: &Tree,
+) -> HtmlNode {
+    fn process_children(
+        tree: &Tree,
+        node: usize,
+        db: &mut Connection,
+        reversed: &Option<HashMap<(String, String), bool>>,
+    ) -> HtmlNode {
+        let descendants = tree.descendants(node);
+        let mut common_ancestral = String::new();
+        let clustered = {
+            // Node ID to tail mapping
+            let tails = descendants
+                .iter()
+                .filter_map(|&d| {
+                    if let Some(name) = &tree[d].name {
+                        let gene_name = name.split('#').next().unwrap();
+                        if let Ok((ancestral, species, chr, pos)) = get_gene(db, gene_name) {
+                            let (left, right) = tails(db, &species, &chr, pos, WINDOW);
+                            common_ancestral = ancestral.to_owned();
+                            Some((
+                                d,
+                                left.iter()
+                                    .map(|g| &g.0)
+                                    .rev() // XXX Pour que les POA partent bien du bout
+                                    .chain([MARKER.to_owned()].iter())
+                                    .chain(right.iter().map(|g| &g.0))
+                                    .cloned()
+                                    .collect::<Vec<String>>(),
+                            ))
+                        } else {
+                            eprintln!("{} -- {} not found", name, gene_name);
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashMap<_, _>>();
+
+            if !tails.is_empty() {
+                let (g, heads) = nw::align(&tails);
+                let mut alignment = nw::poa_to_strings(&g, &heads)
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                // Differentiate between tail of shorter alignments and actual indels
+                alignment.iter_mut().for_each(|a| {
+                    for pos in a.iter_mut() {
+                        if pos == INDEL {
+                            *pos = "".to_string();
+                        } else {
+                            break;
+                        }
+                    }
+                });
+                alignment.iter_mut().for_each(|a| {
+                    for pos in a.iter_mut().rev() {
+                        if pos == INDEL {
+                            *pos = "".to_string();
+                        } else {
+                            break;
+                        }
+                    }
+                });
+
+                println!("\n");
+                Some(
+                    (0..alignment[0].len())
+                        .map(|i| {
+                            println!();
+                            for kk in alignment.iter().map(|a| &a[i]) {
+                                let kkk = kk.chars().take(18).collect::<String>();
+                                print!(" {:<18} ", kkk);
+                            }
+                            let actual_count =
+                                alignment.iter().filter(|a| a[i] != EMPTY).count() as f32;
+                            let mut counts: HashMap<String, i32> = HashMap::new();
+                            alignment
+                                .iter()
+                                .map(|a| &a[i])
+                                .for_each(|g| *counts.entry(g.clone()).or_insert(0) += 1);
+                            PolyGene {
+                                genes: counts
+                                    .into_iter()
+                                    .filter_map(|(name, v)| {
+                                        if name == EMPTY || name == INDEL {
+                                            None
+                                        } else {
+                                            let name = if name != MARKER {
+                                                &name
+                                            } else {
+                                                &common_ancestral
+                                            };
+                                            Some((
+                                                Gene {
+                                                    name: name.clone(),
+                                                    color: if name == EMPTY {
+                                                        "#ccc".to_string()
+                                                    } else {
+                                                        gene2color(&name).to_hex_string()
+                                                    },
+                                                },
+                                                v as f32 / actual_count,
+                                            ))
+                                        }
+                                    })
+                                    .collect::<Vec<(Gene, f32)>>(),
+                            }
+                        })
+                        .collect::<Vec<PolyGene>>(),
+                )
+            } else {
+                None
+            }
+        };
+
+        let ((species, chr, gene, ancestral), (lefts, rights)) = if let Some(name) = &tree[node].name {
+            let gene_name = name.split('#').next().unwrap();
+            if let Ok((gene, ancestral, species, chr, pos, direction)) =
+                db.query_row(ANCESTRAL_QUERY, &[&gene_name], |r| {
+                    let gene: String = r.get("gene").unwrap();
+                    let ancestral: String = r.get("ancestral").unwrap();
+                    let species: String = r.get("species").unwrap();
+                    let chr: String = r.get("chr").unwrap();
+                    let pos: i32 = r.get("start").unwrap();
+                    let direction: String = r.get("direction").unwrap();
+                    Ok((gene, ancestral, species, chr, pos, direction))
+                })
+            {
+                common_ancestral = ancestral;
+                let (proto_lefts, proto_rights) = tails(db, &species, &chr, pos, WINDOW);
+                let refp = tree.siblings(node).iter().next().map(|n| {
+                    tree[*n]
+                        .name
+                        .as_ref()
+                        .unwrap()
+                        .split('#')
+                        .next()
+                        .unwrap()
+                        .clone()
+                });
+                let (lefts, rights) = if let Some(refp) = refp {
+                    if *gene_name != *refp
+                        && *reversed
+                            .as_ref()
+                            .and_then(|r| r.get(&(refp.to_string(), gene_name.to_owned())))
+                            .unwrap()
+                    {
+                        (proto_rights, proto_lefts)
+                    } else {
+                        (proto_lefts, proto_rights)
+                    }
+                } else {
+                    (proto_lefts, proto_rights)
+                };
+                (
+                    (species, chr, gene_name.to_owned(), ancestral),
+                    (
+                        lefts
+                            .into_iter()
+                            .rev()
+                            .map(|g| Gene {
+                                name: g.0.clone(),
+                                color: if g.0 == EMPTY {
+                                    "#111".into()
+                                } else {
+                                    gene2color(&g.0).to_hex_string()
+                                },
+                            })
+                            .collect::<Vec<_>>(),
+                        rights
+                            .into_iter()
+                            .map(|g| Gene {
+                                name: g.0.clone(),
+                                color: gene2color(&g.0).to_hex_string(),
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                )
+            } else {
+                eprintln!("{} -- {} not found", name, gene_name);
+                (
+                    (String::new(), String::new(), String::new(), String::new()),
+                    (vec![], vec![]),
+                )
+            }
+        } else {
+            (
+                (String::new(), String::new(), String::new(), String::new()),
+                (vec![], vec![]),
+            )
+        };
+
+        let color = name2color(&species).to_hex_string();
+        HtmlNode {
+            species,
+            chr,
+            gene,
+            ancestral,
+            color,
+            children: tree[node]
+                .children()
+                .iter()
+                .map(|n| process_children(tree, *n, db, reversed))
+                .collect(),
+            isDuplication: tree[node].is_duplication(),
+            repr: Landscape {
+                lefts,
+                rights,
+                me: Gene {
+                    color: gene2color(&common_ancestral).to_hex_string(),
+                    name: common_ancestral,
+                },
+            },
+            clustered,
+        }
+    }
+
+    process_children(tree, 0, db, reversed)
+}
+
+fn process_file(
+    filename: &str,
+    db_filename: &str,
+    direction_filename: Option<&str>,
+    graph_type: &str,
+) {
     println!("Processing {}", filename);
     let t = Tree::from_filename(filename).unwrap();
     let mut db =
         Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let reversed = direction_filename.map(|fname| {
+        BufReader::new(File::open(fname).unwrap())
+            .lines()
+            .map(|l| {
+                let l = l
+                    .unwrap()
+                    .split('\t')
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
+                ((l[0].to_owned(), l[1].to_owned()), l[2] == "1")
+            })
+            .collect::<HashMap<(String, String), bool>>()
+    });
 
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
@@ -766,21 +1092,35 @@ fn process_file(filename: &str, db_filename: &str, graph_type: &str) {
             );
             let mut links = Vec::new();
             draw_tree(
-                &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+                &mut svg, &mut db, &reversed, None, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+                &mut links,
             );
             draw_links(&mut svg, &links, 50.0, xlabels);
+            svg.auto_fit();
+            let mut out = File::create(&format!("{}.svg", filename)).unwrap();
+            out.write_all(svg.render_svg().as_bytes()).unwrap();
         }
         "condensed" => {
             draw_clustered(
-                &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+                &mut svg, &mut db, &reversed, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
             );
+            svg.auto_fit();
+            let mut out = File::create(&format!("{}.svg", filename)).unwrap();
+            out.write_all(svg.render_svg().as_bytes()).unwrap();
+        }
+        "html" => {
+            let mut out = File::create(&format!("{}.json", filename)).unwrap();
+            out.write_all(
+                format!(
+                    "let data = {};",
+                    serde_json::to_string_pretty(&draw_html(&mut db, &reversed, &t)).unwrap()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
         }
         _ => unimplemented!(),
     };
-
-    svg.auto_fit();
-    let mut out = File::create(&format!("{}.svg", filename)).unwrap();
-    out.write_all(svg.render_svg().as_bytes()).unwrap();
 }
 
 fn main() {
@@ -791,7 +1131,7 @@ fn main() {
             Arg::with_name("type")
                 .help("The graph type to use")
                 .required(true)
-                .possible_values(&["flat", "condensed"])
+                .possible_values(&["flat", "condensed", "html"])
                 .index(1),
         )
         .arg(
@@ -806,9 +1146,21 @@ fn main() {
                 .required(true)
                 .multiple(true),
         )
+        .arg(
+            Arg::with_name("reversed")
+                .help("A file containing directional pairings")
+                .takes_value(true)
+                .long("direction")
+                .short("D"),
+        )
         .get_matches();
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
-        process_file(filename, &value_t!(args, "database", String).unwrap(), &value_t!(args, "type", String).unwrap());
+        process_file(
+            filename,
+            &value_t!(args, "database", String).unwrap(),
+            args.value_of("reversed"),
+            &value_t!(args, "type", String).unwrap(),
+        );
     }
 }
