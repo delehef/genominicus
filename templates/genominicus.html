@@ -1,0 +1,22 @@
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>GENOMINICUS</title>
+    <style>
+      {% include "genominicus.css" %}
+    </style>
+  </head>
+  <body>
+    <div id="root">
+    </div>
+  </body>
+  <script>
+      {% include "svg.min.js" %}
+  </script>
+  <script>
+    let data = {{ data }};
+  </script>
+  <script>
+      {% include "genominicus.js" %}
+  </script>
+</html>

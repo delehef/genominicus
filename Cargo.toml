@@ -21,3 +21,6 @@ bimap = "0.6"
 maplit = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+[dependencies.tera]
+version = "1"
+default-features = false

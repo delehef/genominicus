@@ -890,14 +890,14 @@ fn draw_html(
                     }
                 });
 
-                println!("\n");
+                // println!("\n");
                 Some(
                     (0..alignment[0].len())
                         .map(|i| {
-                            println!();
+                            // println!();
                             for kk in alignment.iter().map(|a| &a[i]) {
                                 let kkk = kk.chars().take(18).collect::<String>();
-                                print!(" {:<18} ", kkk);
+                                // print!(" {:<18} ", kkk);
                             }
                             let actual_count =
                                 alignment.iter().filter(|a| a[i] != EMPTY).count() as f32;
@@ -941,82 +941,83 @@ fn draw_html(
             }
         };
 
-        let ((species, chr, gene, ancestral), (lefts, rights)) = if let Some(name) = &tree[node].name {
-            let gene_name = name.split('#').next().unwrap();
-            if let Ok((gene, ancestral, species, chr, pos, direction)) =
-                db.query_row(ANCESTRAL_QUERY, &[&gene_name], |r| {
-                    let gene: String = r.get("gene").unwrap();
-                    let ancestral: String = r.get("ancestral").unwrap();
-                    let species: String = r.get("species").unwrap();
-                    let chr: String = r.get("chr").unwrap();
-                    let pos: i32 = r.get("start").unwrap();
-                    let direction: String = r.get("direction").unwrap();
-                    Ok((gene, ancestral, species, chr, pos, direction))
-                })
-            {
-                common_ancestral = ancestral;
-                let (proto_lefts, proto_rights) = tails(db, &species, &chr, pos, WINDOW);
-                let refp = tree.siblings(node).iter().next().map(|n| {
-                    tree[*n]
-                        .name
-                        .as_ref()
-                        .unwrap()
-                        .split('#')
-                        .next()
-                        .unwrap()
-                        .clone()
-                });
-                let (lefts, rights) = if let Some(refp) = refp {
-                    if *gene_name != *refp
-                        && *reversed
+        let ((species, chr, gene, ancestral), (lefts, rights)) =
+            if let Some(name) = &tree[node].name {
+                let gene_name = name.split('#').next().unwrap();
+                if let Ok((gene, ancestral, species, chr, pos, direction)) =
+                    db.query_row(ANCESTRAL_QUERY, &[&gene_name], |r| {
+                        let gene: String = r.get("gene").unwrap();
+                        let ancestral: String = r.get("ancestral").unwrap();
+                        let species: String = r.get("species").unwrap();
+                        let chr: String = r.get("chr").unwrap();
+                        let pos: i32 = r.get("start").unwrap();
+                        let direction: String = r.get("direction").unwrap();
+                        Ok((gene, ancestral, species, chr, pos, direction))
+                    })
+                {
+                    common_ancestral = ancestral.clone();
+                    let (proto_lefts, proto_rights) = tails(db, &species, &chr, pos, WINDOW);
+                    let refp = tree.siblings(node).iter().next().map(|n| {
+                        tree[*n]
+                            .name
                             .as_ref()
-                            .and_then(|r| r.get(&(refp.to_string(), gene_name.to_owned())))
                             .unwrap()
-                    {
-                        (proto_rights, proto_lefts)
+                            .split('#')
+                            .next()
+                            .unwrap()
+                            .clone()
+                    });
+                    let (lefts, rights) = if let Some(refp) = refp {
+                        if *gene_name != *refp
+                            && *reversed
+                                .as_ref()
+                                .and_then(|r| r.get(&(refp.to_string(), gene_name.to_owned())))
+                                .unwrap()
+                        {
+                            (proto_rights, proto_lefts)
+                        } else {
+                            (proto_lefts, proto_rights)
+                        }
                     } else {
                         (proto_lefts, proto_rights)
-                    }
-                } else {
-                    (proto_lefts, proto_rights)
-                };
-                (
-                    (species, chr, gene_name.to_owned(), ancestral),
+                    };
                     (
-                        lefts
-                            .into_iter()
-                            .rev()
-                            .map(|g| Gene {
-                                name: g.0.clone(),
-                                color: if g.0 == EMPTY {
-                                    "#111".into()
-                                } else {
-                                    gene2color(&g.0).to_hex_string()
-                                },
-                            })
-                            .collect::<Vec<_>>(),
-                        rights
-                            .into_iter()
-                            .map(|g| Gene {
-                                name: g.0.clone(),
-                                color: gene2color(&g.0).to_hex_string(),
-                            })
-                            .collect::<Vec<_>>(),
-                    ),
-                )
+                        (species, chr, gene_name.to_owned(), ancestral),
+                        (
+                            lefts
+                                .into_iter()
+                                .rev()
+                                .map(|g| Gene {
+                                    name: g.0.clone(),
+                                    color: if g.0 == EMPTY {
+                                        "#111".into()
+                                    } else {
+                                        gene2color(&g.0).to_hex_string()
+                                    },
+                                })
+                                .collect::<Vec<_>>(),
+                            rights
+                                .into_iter()
+                                .map(|g| Gene {
+                                    name: g.0.clone(),
+                                    color: gene2color(&g.0).to_hex_string(),
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
+                    )
+                } else {
+                    eprintln!("{} -- {} not found", name, gene_name);
+                    (
+                        (String::new(), String::new(), String::new(), String::new()),
+                        (vec![], vec![]),
+                    )
+                }
             } else {
-                eprintln!("{} -- {} not found", name, gene_name);
                 (
                     (String::new(), String::new(), String::new(), String::new()),
                     (vec![], vec![]),
                 )
-            }
-        } else {
-            (
-                (String::new(), String::new(), String::new(), String::new()),
-                (vec![], vec![]),
-            )
-        };
+            };
 
         let color = name2color(&species).to_hex_string();
         HtmlNode {
@@ -1109,15 +1110,24 @@ fn process_file(
             out.write_all(svg.render_svg().as_bytes()).unwrap();
         }
         "html" => {
-            let mut out = File::create(&format!("{}.json", filename)).unwrap();
-            out.write_all(
-                format!(
-                    "let data = {};",
-                    serde_json::to_string_pretty(&draw_html(&mut db, &reversed, &t)).unwrap()
-                )
-                .as_bytes(),
-            )
-            .unwrap();
+            use tera::{Context, Tera};
+
+            let mut tera = match Tera::new("templates/*.{html,css,js}") {
+                Ok(t) => t,
+                Err(e) => {
+                    println!("Parsing error(s): {}", e);
+                    ::std::process::exit(1);
+                }
+            };
+            tera.autoescape_on(vec![]);
+            let mut out = File::create(&format!("{}.html", filename)).unwrap();
+            let mut context = Context::new();
+            context.insert(
+                "data",
+                &serde_json::to_string_pretty(&draw_html(&mut db, &reversed, &t)).unwrap(),
+            );
+            tera.render_to("genominicus.html", &context, &mut out)
+                .unwrap();
         }
         _ => unimplemented!(),
     };

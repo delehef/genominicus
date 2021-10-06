@@ -3,10 +3,10 @@ const GENE_WIDTH = 20;
 const GENE_HEIGHT = 15;
 const GENE_SPACING = 5;
 
-MAIN_GENE = "complainte-musculaire";
+MAIN_GENE = "?";
 
 function drawGenes(it, landscape) {
-    // MAIN_GENE = landscape.me.name;
+    MAIN_GENE = landscape.me.name;
     var xoffset = WINDOW - landscape.lefts.length;
     for (const [i, g] of landscape.lefts.entries()) {
         it.rect(GENE_WIDTH, GENE_HEIGHT)
@@ -35,15 +35,15 @@ function drawCluster(it, cluster) {
         let width = poly.genes.reduce((ax, g) => ax + g[1], 0);
         for (const g of poly.genes) {
             let thickness = g[1]*GENE_HEIGHT;
-            if (g[0].ancestral == MAIN_GENE) {
+            if (g[0].name == MAIN_GENE) {
                 it.rect(width*GENE_WIDTH, thickness)
                     .fill(g[0].color)
-                    .attr({"stroke": "#323232", "stroke-width": 0.5, class: "main-gene"})
+                    .attr({class: "main-gene"})
                     .move(x, 2 + GENE_HEIGHT-y-thickness);
             } else {
                 it.rect(width*GENE_WIDTH, thickness)
                     .fill(g[0].color)
-                    .attr({"stroke": "#323232", "stroke-width": 0.5, class: "iam-" + g[0].name})
+                    .attr({"stroke": "#323232", "stroke-width": 0.5, class: "gene iam-" + g[0].name})
                     .move(x, 2 + GENE_HEIGHT-y-thickness);
             }
             y += thickness;
@@ -59,6 +59,7 @@ function insertAt(it, root, depth) {
 
     var content = document.createElement("div");
     content.classList.add("intrinsic");
+    div.appendChild(content);
 
     if (it.isDuplication) {
         div.classList.add("D")
@@ -101,7 +102,6 @@ function insertAt(it, root, depth) {
     }
 
 
-    div.appendChild(content);
     root.appendChild(div);
 }
 
@@ -109,29 +109,21 @@ window.onload = () => {
     let root = document.getElementById("root")
     data.children.forEach((i) => insertAt(i, root, 10));
 
-    let done = new Set()
     Array.prototype.forEach.call(document.getElementsByClassName("gene"), function(el) {
         el.classList.forEach(className => {
-            console.log("Processing ", className)
-            console.log(done)
             if (className.startsWith("iam-")) {
-                // if (!done.has(className)) {
-                    done.add(className);
-                    el.addEventListener('mouseenter', e => {
-                        Array.prototype.forEach.call(
-                            document.getElementsByClassName(className),
-                            (ee) => ee.classList.toggle("highlight-gene")
-                        );
-                    });
-                    el.addEventListener('mouseleave', e => {
-                        Array.prototype.forEach.call(
-                            document.getElementsByClassName(className),
-                            (ee) => ee.classList.toggle("highlight-gene")
-                        );
-                    });
-                // } else {
-                //     console.log("ALREADY DONE ", className)
-                // }
+                el.addEventListener('mouseenter', e => {
+                    Array.prototype.forEach.call(
+                        document.getElementsByClassName(className),
+                        (ee) => ee.classList.toggle("highlight-gene")
+                    );
+                });
+                el.addEventListener('mouseleave', e => {
+                    Array.prototype.forEach.call(
+                        document.getElementsByClassName(className),
+                        (ee) => ee.classList.toggle("highlight-gene")
+                    );
+                });
             }
         })
     });
