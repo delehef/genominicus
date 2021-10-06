@@ -7,12 +7,9 @@ body {
 
 div.node {
     font-family: monospace;
-    padding: 1rem
-    padding-left: 2rem;
-    margin-left: 2rem;
+    margin: 0;
+    padding: 0rem;
     text-align: right;
-    border-left: 1px solid black;
-    /* border-top: 1px solid black; */
 }
 .intrinsic {
     display: flex;
@@ -29,8 +26,10 @@ div.node {
 }
 
 div.node-container {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
+    padding-left: 2rem;
+    margin-left: 2rem;
+    border-left: 1px solid #444;
+    border-top: 1px solid #444;
 }
 
 div.node-container > .intrinsic {
