@@ -71,7 +71,7 @@ function insertAt(it, root, depth) {
         geneName.classList.add("nametag");
         geneName.style.color = it.color;
         geneName.appendChild(document.createTextNode(it.gene))
-        geneName.href = "https://www.ensembl.org/Multi/Search/Results?q=ENSPTEG00000028910;site=ensembl"
+        geneName.href = "https://www.ensembl.org/Multi/Search/Results?q="+it.gene+";site=ensembl"
         content.appendChild(geneName);
 
         var locus = document.createElement("a");
