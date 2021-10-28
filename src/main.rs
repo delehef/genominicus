@@ -26,6 +26,8 @@ pub type Nucleotide = String;
 pub type Sequence = Vec<Nucleotide>;
 pub type Sequences = HashMap<SeqID, Sequence>;
 
+const DROP_EMPTY: bool = true;
+
 #[derive(Serialize, Deserialize)]
 struct PolyGene {
     genes: Vec<(Gene, f32)>,
@@ -870,37 +872,43 @@ fn draw_html(
                     .values()
                     .cloned()
                     .collect::<Vec<_>>();
-                // Differentiate between tail of shorter alignments and actual indels
-                alignment.iter_mut().for_each(|a| {
-                    for pos in a.iter_mut() {
-                        if pos == INDEL {
-                            *pos = "".to_string();
-                        } else {
-                            break;
+                if false {
+                    // Differentiate between tail of shorter alignments and actual indels
+                    // Left tail
+                    alignment.iter_mut().for_each(|a| {
+                        for pos in a.iter_mut() {
+                            if pos == INDEL {
+                                *pos = "".to_string();
+                            } else {
+                                break;
+                            }
                         }
-                    }
-                });
-                alignment.iter_mut().for_each(|a| {
-                    for pos in a.iter_mut().rev() {
-                        if pos == INDEL {
-                            *pos = "".to_string();
-                        } else {
-                            break;
+                    });
+                    // Right tail
+                    alignment.iter_mut().for_each(|a| {
+                        for pos in a.iter_mut().rev() {
+                            if pos == INDEL {
+                                *pos = "".to_string();
+                            } else {
+                                break;
+                            }
                         }
-                    }
-                });
+                    });
+                }
 
-                // println!("\n");
                 Some(
                     (0..alignment[0].len())
                         .map(|i| {
-                            // println!();
                             for kk in alignment.iter().map(|a| &a[i]) {
                                 let kkk = kk.chars().take(18).collect::<String>();
                                 // print!(" {:<18} ", kkk);
                             }
-                            let actual_count =
-                                alignment.iter().filter(|a| a[i] != EMPTY).count() as f32;
+                            let count = if false {
+                                alignment.iter().filter(|a| a[i] != EMPTY).count() as f32
+                            } else {
+                                alignment.len() as f32
+                            };
+
                             let mut counts: HashMap<String, i32> = HashMap::new();
                             alignment
                                 .iter()
@@ -910,9 +918,9 @@ fn draw_html(
                                 genes: counts
                                     .into_iter()
                                     .filter_map(|(name, v)| {
-                                        if name == EMPTY || name == INDEL {
-                                            None
-                                        } else {
+                                        // if DROP_EMPTY && (name == EMPTY || name == INDEL) {
+                                        //     None
+                                        // } else {
                                             let name = if name != MARKER {
                                                 &name
                                             } else {
@@ -921,15 +929,15 @@ fn draw_html(
                                             Some((
                                                 Gene {
                                                     name: name.clone(),
-                                                    color: if name == EMPTY {
+                                                    color: if name == EMPTY || name == INDEL {
                                                         "#ccc".to_string()
                                                     } else {
                                                         gene2color(&name).to_hex_string()
                                                     },
                                                 },
-                                                v as f32 / actual_count,
+                                                v as f32 / count,
                                             ))
-                                        }
+                                        // }
                                     })
                                     .collect::<Vec<(Gene, f32)>>(),
                             }
@@ -972,7 +980,7 @@ fn draw_html(
                             && *reversed
                                 .as_ref()
                                 .and_then(|r| r.get(&(refp.to_string(), gene_name.to_owned())))
-                                .unwrap()
+                                .unwrap_or(&false)
                         {
                             (proto_rights, proto_lefts)
                         } else {

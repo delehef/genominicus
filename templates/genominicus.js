@@ -33,22 +33,26 @@ function drawCluster(it, cluster) {
     for (const [i, poly] of cluster.entries()) {
         var y = 0;
         let width = poly.genes.reduce((ax, g) => ax + g[1], 0);
-        for (const g of poly.genes) {
-            let thickness = g[1]*GENE_HEIGHT;
-            if (g[0].name == MAIN_GENE) {
-                it.rect(width*GENE_WIDTH, thickness)
-                    .fill(g[0].color)
-                    .attr({class: "main-gene"})
-                    .move(x, 2 + GENE_HEIGHT-y-thickness);
-            } else {
-                it.rect(width*GENE_WIDTH, thickness)
-                    .fill(g[0].color)
-                    .attr({"stroke": "#323232", "stroke-width": 0.5, class: "gene iam-" + g[0].name})
-                    .move(x, 2 + GENE_HEIGHT-y-thickness);
+        let none_ratio = poly.genes.reduce((ax, g) => g[0].name == "-" ? g[1] : ax, 0);
+
+        if (none_ratio < 0.5) {
+            for (const g of poly.genes) {
+                let thickness = g[1]*GENE_HEIGHT;
+                if (g[0].name == MAIN_GENE) {
+                    it.rect(width*GENE_WIDTH, thickness)
+                        .fill(g[0].color)
+                        .attr({class: "main-gene"})
+                        .move(x, 2 + GENE_HEIGHT-y-thickness);
+                } else {
+                    it.rect(width*GENE_WIDTH, thickness)
+                        .fill(g[0].color)
+                        .attr({"stroke": "#323232", "stroke-width": 0.5, class: "gene iam-" + g[0].name})
+                        .move(x, 2 + GENE_HEIGHT-y-thickness);
+                }
+                y += thickness;
             }
-            y += thickness;
+            x += width * (GENE_WIDTH + GENE_SPACING)
         }
-        x += width * (GENE_WIDTH + GENE_SPACING)
     }
     return x;
 }
@@ -58,8 +62,10 @@ function insertAt(it, root, depth) {
     div.classList.add("node")
 
     var content = document.createElement("div");
+    var links = document.createElement("div");
     content.classList.add("intrinsic");
     div.appendChild(content);
+    content.appendChild(links);
 
     if (it.isDuplication) {
         div.classList.add("D")
@@ -72,14 +78,14 @@ function insertAt(it, root, depth) {
         geneName.style.color = it.color;
         geneName.appendChild(document.createTextNode(it.gene))
         geneName.href = "https://www.ensembl.org/Multi/Search/Results?q="+it.gene+";site=ensembl"
-        content.appendChild(geneName);
+        links.appendChild(geneName);
 
         var locus = document.createElement("a");
         locus.classList.add("nametag");
         locus.style.color = it.color;
         locus.appendChild(document.createTextNode(it.species + "/" + it.chr))
         locus.href = "https://www.genomicus.bio.ens.psl.eu/genomicus-104.02/cgi-bin/search.pl?query="+it.gene+"&view=default&nocache=$random"
-        content.appendChild(locus);
+        links.appendChild(locus);
     }
     if (it.clustered) {
         div.classList.add("node-container")

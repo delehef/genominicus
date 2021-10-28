@@ -2,7 +2,7 @@ body {
     /* background-color: #ccc; */
     font-size: 10;
     margin: auto;
-    max-width: 2000px;
+    /* max-width: 2000px; */
 }
 
 div.node {
@@ -30,6 +30,9 @@ div.node-container {
     margin-left: 2rem;
     border-left: 1px solid #444;
     border-top: 1px solid #444;
+    border-bottom: 1px solid #444;
+    margin-top: 5px;
+    margin-bottom: 5px;
 }
 
 div.node-container > .intrinsic {
@@ -43,7 +46,7 @@ div.node-container.condensed {
     background-color: rgba(100, 100, 255, 0.4);
 }
 
-div.node-container:hover {
+.D:hover {
     background-color: rgba(100, 100, 255, 0.2);
 }
 
