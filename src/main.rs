@@ -165,7 +165,7 @@ fn draw_background(
         .collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
         if let Some(name) = &x.name {
-            let mut protein_name = name.split(&['#'][..]).collect::<Vec<_>>();
+            let mut protein_name = name.split(&['#', '_'][..]).collect::<Vec<_>>();
             protein_name.pop();
             let protein_name = protein_name.join("_");
             if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
@@ -299,7 +299,7 @@ fn draw_tree(
         .collect::<Vec<_>>();
     children.sort_by_cached_key(|x| {
         if let Some(name) = &x.name {
-            let mut protein_name = name.split(&['#'][..]).collect::<Vec<_>>();
+            let mut protein_name = name.split(&['#', '_'][..]).collect::<Vec<_>>();
             protein_name.pop();
             let protein_name = protein_name.join("_");
             if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
@@ -343,7 +343,7 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             if let Some(name) = &child.name {
-                let protein_name = name.split(&['#'][..]).next().unwrap();
+                let protein_name = name.split(&['#', '_'][..]).next().unwrap();
                 if let Ok((gene, ancestral, species, chr, pos, direction)) =
                     db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                         let gene: String = r.get("gene").unwrap();
@@ -360,7 +360,7 @@ fn draw_tree(
                     let refp = reference
                         .clone()
                         .unwrap()
-                        .split("#")
+                        .split(&['#', '_'][..])
                         .next()
                         .unwrap()
                         .to_string();
@@ -614,7 +614,7 @@ fn draw_clustered(
             .iter()
             .filter_map(|&l| {
                 if let Some(name) = &tree[l].name {
-                    let protein_name = name.split(&['#'][..]).next().unwrap();
+                    let protein_name = name.split(&['#', '_'][..]).next().unwrap();
                     if let Ok((ancestral, species, chr, pos)) =
                         db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
                             let ancestral: String = r.get("ancestral").unwrap();
@@ -842,7 +842,7 @@ fn draw_html(
                 .iter()
                 .filter_map(|&d| {
                     if let Some(name) = &tree[d].name {
-                        let gene_name = name.split('#').next().unwrap();
+                        let gene_name = name.split(&['#', '_'][..]).next().unwrap();
                         if let Ok((ancestral, species, chr, pos)) = get_gene(db, gene_name) {
                             let (left, right) = tails(db, &species, &chr, pos, WINDOW);
                             common_ancestral = ancestral.to_owned();
@@ -951,7 +951,7 @@ fn draw_html(
 
         let ((species, chr, gene, ancestral), (lefts, rights)) =
             if let Some(name) = &tree[node].name {
-                let gene_name = name.split('#').next().unwrap();
+                let gene_name = name.split(&['#', '_'][..]).next().unwrap();
                 if let Ok((gene, ancestral, species, chr, pos, direction)) =
                     db.query_row(ANCESTRAL_QUERY, &[&gene_name], |r| {
                         let gene: String = r.get("gene").unwrap();
@@ -970,7 +970,7 @@ fn draw_html(
                             .name
                             .as_ref()
                             .unwrap()
-                            .split('#')
+                            .split(&['#', '_'][..])
                             .next()
                             .unwrap()
                             .clone()
