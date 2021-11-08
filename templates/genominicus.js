@@ -52,6 +52,12 @@ function drawCluster(it, cluster) {
                 y += thickness;
             }
             x += width * (GENE_WIDTH + GENE_SPACING)
+        } else {
+            it.rect(0.3, GENE_HEIGHT)
+                .fill("#666")
+                .attr({"stroke-width": 0.0 })
+                .move(x, 2 + GENE_HEIGHT-y-GENE_HEIGHT);
+            x += width * (0.3 + GENE_SPACING)
         }
     }
     return x;
