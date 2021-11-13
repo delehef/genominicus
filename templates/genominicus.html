@@ -1,12 +1,13 @@
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>GENOMINICUS</title>
+    <title>{{ title }}</title>
     <style>
       {% include "genominicus.css" %}
     </style>
   </head>
   <body>
+    <h2>{{ comment }}</h2>
     <div id="root">
     </div>
   </body>
@@ -15,6 +16,8 @@
   </script>
   <script>
     let data = {{ data }};
+    let min_t_len = {{ min_t_len }};
+    let max_t_len = {{ max_t_len }};
   </script>
   <script>
       {% include "genominicus.js" %}

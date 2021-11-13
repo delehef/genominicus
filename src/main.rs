@@ -49,6 +49,7 @@ struct HtmlNode {
     chr: String,
     gene: String,
     ancestral: String,
+    t_len: i32,
     color: String,
     children: Vec<HtmlNode>,
 
@@ -72,7 +73,7 @@ const INDEL: &str = "-";
 const EMPTY: &str = "";
 
 const ANCESTRAL_QUERY: &str =
-    concat!("select gene, ancestral, species, chr, start, direction from genomes where gene=?",);
+    concat!("select gene, ancestral, species, chr, start, t_len, direction from genomes where gene=?",);
 const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
 const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
 
@@ -813,13 +814,14 @@ fn draw_clustered(
 fn get_gene(
     db: &mut Connection,
     name: &str,
-) -> std::result::Result<(String, String, String, i32), rusqlite::Error> {
+) -> std::result::Result<(String, String, String, i32, i32), rusqlite::Error> {
     db.query_row(ANCESTRAL_QUERY, &[&name], |r| {
         let ancestral: String = r.get("ancestral").unwrap();
         let species: String = r.get("species").unwrap();
         let chr: String = r.get("chr").unwrap();
         let pos: i32 = r.get("start").unwrap();
-        Ok((ancestral, species, chr, pos))
+        let t_len: i32 = r.get("t_len").unwrap();
+        Ok((ancestral, species, chr, pos, t_len))
     })
 }
 
@@ -843,7 +845,7 @@ fn draw_html(
                 .filter_map(|&d| {
                     if let Some(name) = &tree[d].name {
                         let gene_name = name.split(&['#', '_'][..]).next().unwrap();
-                        if let Ok((ancestral, species, chr, pos)) = get_gene(db, gene_name) {
+                        if let Ok((ancestral, species, chr, pos, t_len)) = get_gene(db, gene_name) {
                             let (left, right) = tails(db, &species, &chr, pos, WINDOW);
                             common_ancestral = ancestral.to_owned();
                             Some((
@@ -949,19 +951,10 @@ fn draw_html(
             }
         };
 
-        let ((species, chr, gene, ancestral), (lefts, rights)) =
+        let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
             if let Some(name) = &tree[node].name {
                 let gene_name = name.split(&['#', '_'][..]).next().unwrap();
-                if let Ok((gene, ancestral, species, chr, pos, direction)) =
-                    db.query_row(ANCESTRAL_QUERY, &[&gene_name], |r| {
-                        let gene: String = r.get("gene").unwrap();
-                        let ancestral: String = r.get("ancestral").unwrap();
-                        let species: String = r.get("species").unwrap();
-                        let chr: String = r.get("chr").unwrap();
-                        let pos: i32 = r.get("start").unwrap();
-                        let direction: String = r.get("direction").unwrap();
-                        Ok((gene, ancestral, species, chr, pos, direction))
-                    })
+                if let Ok((ancestral, species, chr, pos, t_len)) = get_gene(db, gene_name)
                 {
                     common_ancestral = ancestral.clone();
                     let (proto_lefts, proto_rights) = tails(db, &species, &chr, pos, WINDOW);
@@ -990,7 +983,7 @@ fn draw_html(
                         (proto_lefts, proto_rights)
                     };
                     (
-                        (species, chr, gene_name.to_owned(), ancestral),
+                        (species, chr, gene_name.to_owned(), ancestral, t_len),
                         (
                             lefts
                                 .into_iter()
@@ -1016,13 +1009,13 @@ fn draw_html(
                 } else {
                     eprintln!("{} -- {} not found", name, gene_name);
                     (
-                        (String::new(), String::new(), String::new(), String::new()),
+                        (String::new(), String::new(), String::new(), String::new(), 0),
                         (vec![], vec![]),
                     )
                 }
             } else {
                 (
-                    (String::new(), String::new(), String::new(), String::new()),
+                    (String::new(), String::new(), String::new(), String::new(), 0),
                     (vec![], vec![]),
                 )
             };
@@ -1033,6 +1026,7 @@ fn draw_html(
             chr,
             gene,
             ancestral,
+            t_len,
             color,
             children: tree[node]
                 .children()
@@ -1094,6 +1088,16 @@ fn process_file(
         .pos(FONT_SIZE, FONT_SIZE)
         .text(Path::new(filename).file_stem().unwrap().to_str().unwrap());
 
+    let t_lens = t.leaves()
+        .filter_map(|n| t[n].name.as_ref()
+                    .and_then(|name| name.split(&['#', '_'][..]).next())
+                    .and_then(|gene_name| get_gene(&mut db, gene_name).ok()))
+        .map(|x| x.4)
+        .collect::<Vec<_>>();
+
+    let min_t_len = t_lens.iter().min().unwrap_or(&0);
+    let max_t_len = t_lens.iter().max().unwrap_or(&0);
+
     match graph_type {
         "flat" => {
             draw_background(
@@ -1127,9 +1131,13 @@ fn process_file(
                     ::std::process::exit(1);
                 }
             };
-            tera.autoescape_on(vec![]);
-            let mut out = File::create(&format!("{}.html", filename)).unwrap();
+            let mut out = File::create(&format!("{}.html", &filename)).unwrap();
             let mut context = Context::new();
+            tera.autoescape_on(vec![]);
+            context.insert("title", &Path::new(filename).file_name().unwrap().to_str().unwrap());
+            context.insert("comment", &format!("Transcript length: {} to {}", min_t_len, max_t_len));
+            context.insert("min_t_len", min_t_len);
+            context.insert("max_t_len", max_t_len);
             context.insert(
                 "data",
                 &serde_json::to_string_pretty(&draw_html(&mut db, &reversed, &t)).unwrap(),
