@@ -32,7 +32,7 @@ function drawCluster(it, cluster) {
     var x = 0
     for (const [i, poly] of cluster.entries()) {
         var y = 0;
-        let width = poly.genes.reduce((ax, g) => ax + g[1], 0);
+        // let width = poly.genes.reduce((ax, g) => ax + g[1], 0);
         let none_ratio = poly.genes.reduce((ax, g) => g[0].name == "-" ? g[1] : ax, 0);
 
         if (none_ratio < 0.5) {
@@ -51,7 +51,7 @@ function drawCluster(it, cluster) {
                 }
                 y += thickness;
             }
-            x += width * (GENE_WIDTH + GENE_SPACING)
+            x += GENE_WIDTH + GENE_SPACING
         } else {
             it.rect(0.3, GENE_HEIGHT)
                 .fill("#666")
@@ -98,7 +98,7 @@ function insertAt(it, root, depth) {
             var t_len = document.createElement("span");
             t_len.classList.add("nametag");
             t_len.style.color = `rgb(${(100 - pcent)*2.56}, ${pcent*2.56}, 0)`;
-            t_len.appendChild(document.createTextNode(" (" + it.t_len + "AA)"))
+            t_len.appendChild(document.createTextNode(it.t_len + "AA"))
             links.appendChild(t_len);
         }
     }
