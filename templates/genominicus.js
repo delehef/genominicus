@@ -33,6 +33,7 @@ function drawCluster(it, cluster) {
     for (const [i, poly] of cluster.entries()) {
         var y = 0;
         // let width = poly.genes.reduce((ax, g) => ax + g[1], 0);
+        let width = 1;
         let none_ratio = poly.genes.reduce((ax, g) => g[0].name == "-" ? g[1] : ax, 0);
 
         if (none_ratio < 0.5) {

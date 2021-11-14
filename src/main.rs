@@ -1093,6 +1093,7 @@ fn process_file(
                     .and_then(|name| name.split(&['#', '_'][..]).next())
                     .and_then(|gene_name| get_gene(&mut db, gene_name).ok()))
         .map(|x| x.4)
+        .filter(|&x| x >= 0)
         .collect::<Vec<_>>();
 
     let min_t_len = t_lens.iter().min().unwrap_or(&0);
