@@ -8,10 +8,9 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1"
-pest = "2"
-pest_derive = "2"
 smartstring = "0.2"
 svarog = { path = "../svarog" }
+newick = { path = "../../newick" }
 md5 = "0.7"
 rusqlite = "0.25"
 clap = "2"

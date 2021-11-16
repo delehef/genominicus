@@ -1,4 +1,4 @@
-use crate::nhx::*;
+use newick::*;
 use clap::*;
 use colorsys::{Hsl, Rgb};
 use petgraph::dot::{Config, Dot};
@@ -12,7 +12,6 @@ use std::path::Path;
 use std::{collections::HashMap, usize};
 use std::{fs::File, io::BufReader};
 use svarog::*;
-mod nhx;
 mod nw;
 mod poa;
 
