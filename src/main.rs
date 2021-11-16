@@ -68,7 +68,7 @@ const INDEL: &str = "-";
 const EMPTY: &str = "";
 
 const ANCESTRAL_QUERY: &str = concat!(
-    "select gene, ancestral, species, chr, start, t_len, direction from genomes where gene=?",
+    "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where gene=?",
 );
 const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
 const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
@@ -527,14 +527,21 @@ fn draw_links(
 fn get_gene(
     db: &mut Connection,
     name: &str,
-) -> std::result::Result<(String, String, String, i32, i32), rusqlite::Error> {
+) -> std::result::Result<(String, String, String, i32, i32, Vec<String>, Vec<String>), rusqlite::Error> {
     db.query_row(ANCESTRAL_QUERY, &[&name], |r| {
         let ancestral: String = r.get("ancestral").unwrap();
         let species: String = r.get("species").unwrap();
         let chr: String = r.get("chr").unwrap();
         let pos: i32 = r.get("start").unwrap();
         let t_len: i32 = r.get("t_len").unwrap();
-        Ok((ancestral, species, chr, pos, t_len))
+
+        let left_tail: String = r.get("left_tail_names").unwrap();
+        let left_tail = left_tail.split(".").collect::<Vec<_>>().iter().rev().take(WINDOW as usize).map(|x| x.to_string()).collect();
+
+        let right_tail: String = r.get("right_tail_names").unwrap();
+        let right_tail = right_tail.split(".").take(WINDOW as usize).map(|x| x.to_string()).collect();
+
+        Ok((ancestral, species, chr, pos, t_len, left_tail, right_tail))
     })
 }
 
@@ -558,16 +565,16 @@ fn draw_html(
                 .filter_map(|&d| {
                     if let Some(name) = &tree[d].name {
                         let gene_name = name.split('#').next().unwrap();
-                        if let Ok((ancestral, species, chr, pos, t_len)) = get_gene(db, gene_name) {
-                            let (left, right) = tails(db, &species, &chr, pos, WINDOW);
+                        if let Ok((ancestral, species, chr, pos, _t_len, left, right)) = get_gene(db, gene_name) {
+                            // let (left, right) = tails(db, &species, &chr, pos, WINDOW);
                             common_ancestral = ancestral.to_owned();
                             Some((
                                 d,
                                 left.iter()
-                                    .map(|g| &g.0)
+                                // .map(|g| &g.0)
                                     .rev() // XXX Pour que les POA partent bien du bout
                                     .chain([MARKER.to_owned()].iter())
-                                    .chain(right.iter().map(|g| &g.0))
+                                    .chain(right.iter()) // .map(|g| &g.0))
                                     .cloned()
                                     .collect::<Vec<String>>(),
                             ))
@@ -667,9 +674,9 @@ fn draw_html(
         let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
             if let Some(name) = &tree[node].name {
                 let gene_name = name.split('#').next().unwrap();
-                if let Ok((ancestral, species, chr, pos, t_len)) = get_gene(db, gene_name) {
+                if let Ok((ancestral, species, chr, pos, t_len, left_tail, right_tail)) = get_gene(db, gene_name) {
                     common_ancestral = ancestral.clone();
-                    let (proto_lefts, proto_rights) = tails(db, &species, &chr, pos, WINDOW);
+                    let (proto_lefts, proto_rights) = (left_tail, right_tail); // tails(db, &species, &chr, pos, WINDOW);
                     let refp = tree.siblings(node).iter().next().map(|n| {
                         tree[*n]
                             .name
@@ -701,19 +708,19 @@ fn draw_html(
                                 .into_iter()
                                 .rev()
                                 .map(|g| Gene {
-                                    name: g.0.clone(),
-                                    color: if g.0 == EMPTY {
+                                    name: g.clone(),
+                                    color: if g == EMPTY {
                                         "#111".into()
                                     } else {
-                                        gene2color(&g.0).to_hex_string()
+                                        gene2color(&g).to_hex_string()
                                     },
                                 })
                                 .collect::<Vec<_>>(),
                             rights
                                 .into_iter()
                                 .map(|g| Gene {
-                                    name: g.0.clone(),
-                                    color: gene2color(&g.0).to_hex_string(),
+                                    name: g.clone(),
+                                    color: gene2color(&g).to_hex_string(),
                                 })
                                 .collect::<Vec<_>>(),
                         ),
