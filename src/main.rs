@@ -48,6 +48,7 @@ struct HtmlNode {
     children: Vec<HtmlNode>,
 
     isDuplication: bool,
+    confidence: f32,
     repr: Landscape,
     clustered: Option<Vec<PolyGene>>,
 }
@@ -762,6 +763,7 @@ fn draw_html(
                 })
                 .unwrap_or(vec![]),
             isDuplication: tree[node].is_duplication(),
+            confidence: tree[node].data.get("DCS").and_then(|x| x.parse::<f32>().ok()).unwrap_or(0.0),
             repr: Landscape {
                 lefts,
                 rights,

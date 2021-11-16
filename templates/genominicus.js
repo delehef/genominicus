@@ -64,19 +64,18 @@ function drawCluster(it, cluster) {
     return x;
 }
 
-function insertAt(it, root, depth) {
+function insertAt(it, root, depth, borderColor="") {
     var div = document.createElement("div");
     div.classList.add("node")
+    if (borderColor !== "") {
+        div.style.borderColor == borderColor
+    }
 
     var content = document.createElement("div");
     var links = document.createElement("div");
     content.classList.add("intrinsic");
     div.appendChild(content);
     content.appendChild(links);
-
-    if (it.isDuplication) {
-        div.classList.add("D")
-    }
 
 
     if (it.gene != "") {
@@ -116,11 +115,19 @@ function insertAt(it, root, depth) {
         drawGenes(l, it.repr);
     }
 
-
     if (it.children.length > 0) {
         div.addEventListener("click", function(e) { this.classList.toggle("condensed"); e.stopPropagation(); });
         div.style.cursor = "pointer";
-        it.children.forEach((i) => insertAt(i, div, depth-1));
+        if (it.isDuplication) {
+            let p = it.confidence;
+            let color = `rgb(${(1 - p)*256}, ${p*256}, 0)`
+            div.classList.add("D");
+            div.style.borderLeftWidth="10px";
+            div.style.borderColor = color;
+            it.children.forEach((i) => insertAt(i, div, depth-1, borderColor=color));
+        } else {
+            it.children.forEach((i) => insertAt(i, div, depth-1));
+        }
     }
 
 
