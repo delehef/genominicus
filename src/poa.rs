@@ -59,18 +59,13 @@ pub fn update_edge(
 fn find_head(g: &POAGraph, tail: NodeIndex, seq_id: SeqID) -> NodeIndex {
     let mut node_idx = tail;
 
-    loop {
-        if let Some(next_node) = g
-            .edges_directed(node_idx, Direction::Outgoing)
-            .filter(|e| e.weight().contains(&seq_id))
-            .nth(0)
-            .map(|e| e.target())
-        // Check there is only one?
-        {
-            node_idx = next_node
-        } else {
-            break;
-        }
+    while let Some(next_node) = g
+        .edges_directed(node_idx, Direction::Outgoing)
+        .find(|e| e.weight().contains(&seq_id))
+        .map(|e| e.target())
+    // Check there is only one?
+    {
+        node_idx = next_node
     }
 
     node_idx
@@ -112,8 +107,7 @@ impl POA {
             if let Some(tail) = poa
                 .g
                 .edges_directed(*old_tail, Direction::Outgoing)
-                .filter(|e| e.weight().contains(&seq_id))
-                .nth(0)
+                .find(|e| e.weight().contains(seq_id))
                 .map(|e| e.target())
             {
                 *old_tail = tail;
@@ -166,11 +160,11 @@ impl POA {
         }
 
         for (seq_id, old_head) in self.heads.iter_mut() {
-            if other_tails.contains_key(&seq_id) {
+            if other_tails.contains_key(seq_id) {
                 update_edge(
                     &mut self.g,
                     Some(*old_head),
-                    Some(*old_to_new.get(other_tails.get(&seq_id).unwrap()).unwrap()),
+                    Some(*old_to_new.get(other_tails.get(seq_id).unwrap()).unwrap()),
                     *seq_id,
                 );
                 let new_head = find_head(&self.g, *old_head, *seq_id);
@@ -195,17 +189,12 @@ impl POA {
 
                 loop {
                     let nucs = &self.g[node].nucs;
-                    seq_out[rank_to_column[&node]] = if nucs.len() > 1 {
-                        nuc_to_str(&nucs[seq_id])
-                    } else {
-                        nuc_to_str(&nucs[seq_id])
-                    };
+                    seq_out[rank_to_column[&node]] = nuc_to_str(&nucs[seq_id]);
 
                     if let Some(next) = self
                         .g
                         .edges_directed(node, Direction::Outgoing)
-                        .filter(|e| e.weight().contains(&seq_id))
-                        .nth(0)
+                        .find(|e| e.weight().contains(seq_id))
                         .map(|e| e.target())
                     // Check there is only one?
                     {

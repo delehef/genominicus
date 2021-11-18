@@ -27,7 +27,7 @@ fn insert_hanging_seq(
 ) -> Option<(NodeIndex, NodeIndex)> {
     let mut first_node: Option<NodeIndex> = None;
     let mut last_node: Option<NodeIndex> = None;
-    if seq.len() == 0 {
+    if seq.is_empty() {
         return None;
     }
 
@@ -38,7 +38,7 @@ fn insert_hanging_seq(
         if first_node.is_none() {
             first_node = Some(node)
         }
-        if !last_node.is_none() {
+        if last_node.is_some() {
             poa::update_edge(g, last_node, Some(node), seq_id);
         }
         last_node = Some(node);
@@ -285,7 +285,7 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
     build_matrix(
         g,
         seq,
-        &settings,
+        settings,
         &ranks_to_nodes,
         &nodes_to_ranks,
         &nucs,
@@ -527,16 +527,11 @@ pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, Vec<String
 
             loop {
                 let nucs = &g[node].nucs;
-                seq_out[rank_to_column[&node]] = if nucs.len() > 1 {
-                    nuc_to_str(&nucs[seq_id])
-                } else {
-                    nuc_to_str(&nucs[seq_id])
-                };
+                seq_out[rank_to_column[&node]] = nuc_to_str(&nucs[seq_id]);
 
                 if let Some(next) = g
                     .edges_directed(node, Direction::Outgoing)
-                    .filter(|e| e.weight().contains(&seq_id))
-                    .nth(0)
+                    .find(|e| e.weight().contains(seq_id))
                     .map(|e| e.target())
                 // Check there is only one?
                 {

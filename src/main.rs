@@ -51,7 +51,7 @@ struct HtmlNode {
     clustered: Option<Vec<PolyGene>>,
 }
 
-fn nuc_to_str(nuc: &Nucleotide) -> String {
+fn nuc_to_str(nuc: &str) -> String {
     nuc.to_string()
 }
 
@@ -72,7 +72,7 @@ fn draw_background(
         .children
         .as_ref()
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
-        .unwrap_or(vec![]);
+        .unwrap_or_default();
     children.sort_by_cached_key(|x| {
         if let Some(DbGene { species, .. }) = x
             .name
@@ -178,7 +178,7 @@ fn draw_tree(
         .children
         .as_ref()
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
-        .unwrap_or(vec![]);
+        .unwrap_or_default();
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
@@ -235,7 +235,7 @@ fn draw_tree(
                             colormap
                                 .get(&g.clone())
                                 .unwrap_or(&StyleColor::String("#aaa".to_string())),
-                            &g,
+                            g,
                         );
                         if g == ancestral {
                             drawn.style(|s| {
@@ -271,7 +271,7 @@ fn draw_tree(
                             colormap
                                 .get(&g.clone())
                                 .unwrap_or(&StyleColor::String("#aaa".to_string())),
-                            &g,
+                            g,
                         );
                         if g == ancestral {
                             drawn.style(|s| {
@@ -281,9 +281,9 @@ fn draw_tree(
                         }
                     }
                     links.push((
-                        left_tail.iter().map(|x| x.clone()).collect(),
+                        left_tail.to_vec(),
                         ancestral.into(),
-                        right_tail.iter().map(|x| x.clone()).collect(),
+                        right_tail.to_vec(),
                     ));
                 } else {
                     // The node was not found in the database
@@ -298,8 +298,8 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
             y = draw_tree(
                 svg,
-                &genes,
-                &colormap,
+                genes,
+                colormap,
                 depth,
                 tree,
                 child,
@@ -480,7 +480,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
                                                     colormap
                                                         .get(&name.clone())
                                                         .map(|c| c.to_hex_string())
-                                                        .unwrap_or("#aaa".to_string())
+                                                        .unwrap_or_else(|| "#aaa".to_string())
                                                 },
                                             },
                                             v as f32 / count,
@@ -527,7 +527,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
                         ),
                         (
                             lefts
-                                .into_iter()
+                                .iter()
                                 .rev()
                                 .map(|g| Gene {
                                     name: g.clone(),
@@ -537,12 +537,12 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
                                         colormap
                                             .get(&g.clone())
                                             .map(|c| c.to_hex_string())
-                                            .unwrap_or("#aaa".to_string())
+                                            .unwrap_or_else(|| "#aaa".to_string())
                                     },
                                 })
                                 .collect::<Vec<_>>(),
                             rights
-                                .into_iter()
+                                .iter()
                                 .map(|g| Gene {
                                     name: g.clone(),
                                     color: if g == EMPTY {
@@ -551,7 +551,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
                                         colormap
                                             .get(&g.clone())
                                             .map(|c| c.to_hex_string())
-                                            .unwrap_or("#aaa".to_string())
+                                            .unwrap_or_else(|| "#aaa".to_string())
                                     },
                                 })
                                 .collect::<Vec<_>>(),
@@ -600,7 +600,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
                         .map(|n| process(tree, *n, genes, colormap))
                         .collect()
                 })
-                .unwrap_or(vec![]),
+                .unwrap_or_default(),
             isDuplication: tree[node].is_duplication(),
             confidence: tree[node]
                 .data

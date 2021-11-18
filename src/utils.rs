@@ -36,6 +36,10 @@ pub struct DbGene {
 pub type GeneCache = HashMap<String, DbGene>;
 pub type ColorMap = HashMap<String, StyleColor>;
 
+fn jaccard<T: std::hash::Hash + Eq>(x: &HashSet<T>, y: &HashSet<T>) -> f32 {
+    x.intersection(y).count() as f32 / x.union(y).count() as f32
+}
+
 // Creates a color for a string while trying to ensure it remains readable
 pub fn name2color<S: AsRef<str>>(name: S) -> StyleColor {
     let bytes: [u8; 16] = md5::compute(name.as_ref().as_bytes()).into();
@@ -70,7 +74,7 @@ fn get_gene(db: &mut Connection, name: &str) -> std::result::Result<DbGene, rusq
 
         let left_tail: String = r.get("left_tail_names").unwrap();
         let left_tail = left_tail
-            .split(".")
+            .split('.')
             .collect::<Vec<_>>()
             .iter()
             .rev()
@@ -80,7 +84,7 @@ fn get_gene(db: &mut Connection, name: &str) -> std::result::Result<DbGene, rusq
 
         let right_tail: String = r.get("right_tail_names").unwrap();
         let right_tail = right_tail
-            .split(".")
+            .split('.')
             .take(WINDOW as usize)
             .map(|x| x.to_string())
             .collect();
@@ -169,18 +173,18 @@ fn tails(
 pub fn make_colormap(tree: &Tree, genes: &GeneCache) -> ColorMap {
     let mut colormap = ColorMap::new();
     for l in tree.leaves() {
-        tree[l]
+        if let Some(g) = tree[l]
             .name
             .as_ref()
             .and_then(|name| name.split('#').next())
             .and_then(|name| genes.get(name))
-            .map(|g| {
-                g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
-                    colormap
-                        .entry(g.to_string())
-                        .or_insert_with(|| gene2color(&g));
-                })
-            });
+        {
+            g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
+                colormap
+                    .entry(g.to_string())
+                    .or_insert_with(|| gene2color(&g));
+            })
+        }
     }
     colormap
 }
@@ -190,7 +194,7 @@ pub fn make_colormap_per_duplication(
     genes: &GeneCache,
     colorize_all: bool,
 ) -> ColorMap {
-    fn fill_colors(t: &Tree, leave_nodes: &[usize], genes: &GeneCache, colormap: &mut ColorMap) {
+    fn create_gradient(t: &Tree, leave_nodes: &[usize], genes: &GeneCache, colormap: &mut ColorMap) {
         // No need to create a custom gradient for single-gene dups
         if leave_nodes.len() < 2 {
             return;
@@ -239,44 +243,44 @@ pub fn make_colormap_per_duplication(
 
     fn rec_fill_colormap(tree: &Tree, node: usize, genes: &GeneCache, colormap: &mut ColorMap) {
         if node == 0 || tree[node].is_duplication() {
-            tree[node].children.as_ref().map(|children| {
+            if let Some(children) = tree[node].children.as_ref() {
                 let members = children
                     .iter()
                     .filter(|c| tree[**c].is_leaf())
                     .cloned()
                     .collect::<Vec<_>>();
-                fill_colors(tree, &members, genes, colormap);
+                create_gradient(tree, &members, genes, colormap);
 
                 children
                     .iter()
                     .filter(|c| !tree[**c].is_leaf())
-                    .for_each(|&c| fill_colors(tree, &tree.leaves_of(c), genes, colormap));
-            });
+                    .for_each(|&c| create_gradient(tree, &tree.leaves_of(c), genes, colormap));
+            }
         }
 
-        tree[node].children.as_ref().map(|children| {
+        if let Some(children) = tree[node].children.as_ref() {
             children
                 .iter()
                 .for_each(|&c| rec_fill_colormap(tree, c, genes, colormap))
-        });
+        }
     }
 
     let mut colormap = ColorMap::new();
     rec_fill_colormap(tree, 0, genes, &mut colormap);
     if colorize_all {
         for l in tree.leaves() {
-            tree[l]
+            if let Some(g) = tree[l]
                 .name
                 .as_ref()
                 .and_then(|name| name.split('#').next())
                 .and_then(|name| genes.get(name))
-                .map(|g| {
-                    g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
-                        colormap
-                            .entry(g.to_string())
-                            .or_insert_with(|| gene2color(&g));
-                    })
-                });
+            {
+                g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
+                    colormap
+                        .entry(g.to_string())
+                        .or_insert_with(|| gene2color(&g));
+                })
+            }
         }
     }
     colormap
@@ -285,11 +289,6 @@ pub fn make_colormap_per_duplication(
 pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene> {
     fn reorder_tails(tree: &Tree, node: usize, genes: &mut GeneCache) {
         fn reorder_leaves(t: &Tree, leave_nodes: &[usize], genes: &mut GeneCache) {
-            fn jaccard<T: std::hash::Hash + Eq>(x: &HashSet<T>, y: &HashSet<T>) -> f32 {
-                x.intersection(&y).collect::<Vec<_>>().len() as f32
-                    / x.union(&y).collect::<Vec<_>>().len() as f32
-            }
-
             if leave_nodes.len() < 2 {
                 return;
             }
@@ -318,7 +317,7 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                 .iter()
                 .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
                 .for_each(|l_name| {
-                    genes.get_mut(l_name).map(|gene| {
+                    if let Some(gene) = genes.get_mut(l_name) {
                         let left_tail: HashSet<&String> = HashSet::from_iter(&gene.left_tail);
                         let right_tail: HashSet<&String> = HashSet::from_iter(&gene.right_tail);
 
@@ -330,12 +329,12 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                         if reverse_score > direct_score {
                             std::mem::swap(&mut gene.left_tail, &mut gene.right_tail);
                         }
-                    });
+                    }
                 })
         }
 
         if node == 0 || tree[node].is_duplication() {
-            tree[node].children.as_ref().map(|children| {
+            if let Some(children) = tree[node].children.as_ref() {
                 let members = children
                     .iter()
                     .filter(|c| tree[**c].is_leaf())
@@ -347,13 +346,12 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                     .iter()
                     .filter(|c| !tree[**c].is_leaf())
                     .for_each(|&c| reorder_leaves(tree, &tree.leaves_of(c), genes));
-            });
+            }
         }
 
-        tree[node]
-            .children
-            .as_ref()
-            .map(|children| children.iter().for_each(|&c| reorder_tails(tree, c, genes)));
+        if let Some(children) = tree[node].children.as_ref() {
+            children.iter().for_each(|&c| reorder_tails(tree, c, genes))
+        }
     }
 
     let mut r = t
@@ -366,7 +364,7 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
         .map(|name| {
             (
                 name.to_owned(),
-                get_gene(db, &name).expect(&format!("{} not found", &name)),
+                get_gene(db, name).expect(&format!("{} not found", &name)),
             )
         })
         .collect();
