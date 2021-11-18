@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 #![allow(non_snake_case)] // I like my matrices to be in capitals
 use maplit::hashmap;
 use std::cmp::max;

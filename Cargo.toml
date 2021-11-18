@@ -1,7 +1,7 @@
 [package]
 name = "genominicus"
 version = "0.1.0"
-authors = ["Franklin Delehelle <franklin.delehelle@odena.eu>"]
+authors = ["Franklin Delehelle <delehelle@ens.fr>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,6 +15,7 @@ md5 = "0.7"
 rusqlite = "0.25"
 clap = "2"
 colorsys = "0.6"
+palette = "0.6"
 petgraph = "0.6"
 bimap = "0.6"
 maplit = "1"

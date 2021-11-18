@@ -1,19 +1,17 @@
-use newick::*;
 use clap::*;
-use colorsys::{Hsl, Rgb};
-use petgraph::dot::{Config, Dot};
-use petgraph::graph::NodeIndex;
-use petgraph::{algo::toposort, Direction};
+use newick::*;
 use rusqlite::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
+use std::collections::HashMap;
+use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use std::{collections::HashMap, usize};
-use std::{fs::File, io::BufReader};
 use svarog::*;
+use utils::*;
+
 mod nw;
 mod poa;
+mod utils;
 
 pub type SeqID = usize;
 pub type Nucleotide = String;
@@ -57,94 +55,9 @@ fn nuc_to_str(nuc: &Nucleotide) -> String {
     nuc.to_string()
 }
 
-const WINDOW: i64 = 15;
-const GENE_WIDTH: f32 = 15.;
-const GENE_SPACING: f32 = 5.;
-const BRANCH_WIDTH: f32 = 20.;
-const FONT_SIZE: f32 = 10.;
-
-const MARKER: &str = "=======FINAL=======";
-const INDEL: &str = "-";
-const EMPTY: &str = "";
-
-const ANCESTRAL_QUERY: &str = concat!(
-    "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where gene=?",
-);
-const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
-const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
-
-fn left_tail(
-    db: &mut Connection,
-    species: &str,
-    chr: &str,
-    pos: i32,
-    span: i64,
-) -> Vec<(String, char)> {
-    let mut r = Vec::new();
-    for g in db
-        .prepare(LEFTS_QUERY)
-        .unwrap()
-        .query_map(params![&species, &chr, pos, span], |row| {
-            let ancestral: String = row.get("ancestral").unwrap();
-            let direction: char = row
-                .get::<_, String>("direction")
-                .unwrap()
-                .chars()
-                .next()
-                .unwrap();
-            Ok((ancestral, direction))
-        })
-        .unwrap()
-    {
-        r.push(g.unwrap());
-    }
-    r
-}
-
-fn right_tail(
-    db: &mut Connection,
-    species: &str,
-    chr: &str,
-    pos: i32,
-    span: i64,
-) -> Vec<(String, char)> {
-    let mut r = Vec::new();
-    for g in db
-        .prepare(RIGHTS_QUERY)
-        .unwrap()
-        .query_map(params![&species, &chr, pos, span], |row| {
-            let ancestral: String = row.get("ancestral").unwrap();
-            let direction: char = row
-                .get::<_, String>("direction")
-                .unwrap()
-                .chars()
-                .next()
-                .unwrap();
-            Ok((ancestral, direction))
-        })
-        .unwrap()
-    {
-        r.push(g.unwrap());
-    }
-    r
-}
-
-fn tails(
-    db: &mut Connection,
-    species: &str,
-    chr: &str,
-    pos: i32,
-    span: i64,
-) -> (Vec<(String, char)>, Vec<(String, char)>) {
-    (
-        left_tail(db, species, chr, pos, span),
-        right_tail(db, species, chr, pos, span),
-    )
-}
-
 fn draw_background(
     svg: &mut SvgDrawing,
-    db: &mut Connection,
+    genes: &GeneCache,
     depth: f32,
     tree: &Tree,
     node: &Node,
@@ -161,20 +74,15 @@ fn draw_background(
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or(vec![]);
     children.sort_by_cached_key(|x| {
-        if let Some(name) = &x.name {
-            let mut protein_name = name.split('#').collect::<Vec<_>>();
-            protein_name.pop();
-            let protein_name = protein_name.join("_");
-            if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
-                let species: String = r.get("species").unwrap();
-                Ok(species)
-            }) {
-                species
-            } else {
-                "zzy".to_string()
-            }
+        if let Some(DbGene { species, .. }) = x
+            .name
+            .as_ref()
+            .and_then(|name| name.split('#').next())
+            .and_then(|gene_name| genes.get(&gene_name.to_string()))
+        {
+            species.as_str()
         } else {
-            "zzz".to_string()
+            "zzz"
         }
     });
 
@@ -184,7 +92,7 @@ fn draw_background(
         } else {
             draw_background(
                 svg,
-                db,
+                genes,
                 depth,
                 tree,
                 child,
@@ -214,34 +122,12 @@ fn draw_background(
     y
 }
 
-fn name2color<S: AsRef<str>>(name: S) -> StyleColor {
-    let bytes: [u8; 16] = md5::compute(name.as_ref().as_bytes()).into();
-    let rgb = Rgb::from((bytes[0] as f32, bytes[1] as f32, bytes[2] as f32));
-
-    let mut hsl: Hsl = rgb.into();
-    hsl.set_lightness(hsl.lightness().clamp(30., 40.));
-
-    let rgb: Rgb = hsl.into();
-    StyleColor::Percent(
-        rgb.red() as f32 / 255.,
-        rgb.green() as f32 / 255.,
-        rgb.blue() as f32 / 255.,
-    )
-}
-fn gene2color<S: AsRef<str>>(name: S) -> StyleColor {
-    let bytes: [u8; 16] = md5::compute(name.as_ref().as_bytes()).into();
-    let r = (bytes[0] as f32 / 255.).clamp(0.1, 0.9);
-    let g = (bytes[1] as f32 / 255.).clamp(0.1, 0.9);
-    let b = (bytes[2] as f32 / 255.).clamp(0.1, 0.9);
-    StyleColor::Percent(r, g, b)
-}
-
 fn draw_gene<'a>(
     svg: &'a mut SvgDrawing,
     x: f32,
     y: f32,
     right: bool,
-    color: StyleColor,
+    color: &StyleColor,
     name: &str,
 ) -> &'a mut Polygon {
     if right {
@@ -253,7 +139,7 @@ fn draw_gene<'a>(
             .add_point(x, y + 5.)
             .set_hover(name)
             .style(|s| {
-                s.fill_color(color)
+                s.fill_color(color.clone())
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             })
@@ -266,7 +152,7 @@ fn draw_gene<'a>(
             .add_point(x + 3., y + 5.)
             .set_hover(name)
             .style(|s| {
-                s.fill_color(color)
+                s.fill_color(color.clone())
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             })
@@ -275,9 +161,8 @@ fn draw_gene<'a>(
 
 fn draw_tree(
     svg: &mut SvgDrawing,
-    db: &mut Connection,
-    reversed: &Option<HashMap<(String, String), bool>>,
-    reference: Option<String>,
+    genes: &GeneCache,
+    colormap: &ColorMap,
     depth: f32,
     tree: &Tree,
     node: &Node,
@@ -289,29 +174,11 @@ fn draw_tree(
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
-    let mut children = node
+    let children = node
         .children
         .as_ref()
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or(vec![]);
-    children.sort_by_cached_key(|x| {
-        if let Some(name) = &x.name {
-            let mut protein_name = name.split('#').collect::<Vec<_>>();
-            protein_name.pop();
-            let protein_name = protein_name.join("_");
-            if let Ok(species) = db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
-                let species: String = r.get("species").unwrap();
-                Ok(species)
-            }) {
-                species
-            } else {
-                "zzy".to_string()
-            }
-        } else {
-            "zzz".to_string()
-        }
-    });
-    let reference = children.get(0).and_then(|c| c.name.clone());
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
@@ -340,57 +207,37 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             if let Some(name) = &child.name {
-                let protein_name = name.split('#').next().unwrap();
-                if let Ok((gene, ancestral, species, chr, pos, direction)) =
-                    db.query_row(ANCESTRAL_QUERY, &[&protein_name], |r| {
-                        let gene: String = r.get("gene").unwrap();
-                        let ancestral: String = r.get("ancestral").unwrap();
-                        let species: String = r.get("species").unwrap();
-                        let chr: String = r.get("chr").unwrap();
-                        let pos: i32 = r.get("start").unwrap();
-                        let direction: String = r.get("direction").unwrap();
-                        Ok((gene, ancestral, species, chr, pos, direction))
-                    })
+                let gene_name = name.split('#').next().unwrap();
+                if let Some(DbGene {
+                    ancestral,
+                    species,
+                    chr,
+                    left_tail,
+                    right_tail,
+                    ..
+                }) = genes.get(gene_name)
                 {
-                    let proto_lefts = left_tail(db, &species, &chr, pos, WINDOW);
-                    let proto_rights = right_tail(db, &species, &chr, pos, WINDOW);
-                    let refp = reference
-                        .clone()
-                        .unwrap()
-                        .split('#')
-                        .next()
-                        .unwrap()
-                        .to_string();
-                    let (lefts, rights) = if protein_name != refp
-                        && *reversed
-                        .as_ref()
-                        .and_then(|r| r.get(&(refp, protein_name.to_owned())))
-                        .unwrap_or(&false)
-                    {
-                        (proto_rights, proto_lefts)
-                    } else {
-                        (proto_lefts, proto_rights)
-                    };
-
                     // Gene/protein name
                     svg.text()
                         .pos(depth, y + 5.)
-                        .text(format!("{} {}/{}", gene, species, chr))
+                        .text(format!("{} {}/{}", gene_name, species, chr))
                         .style(|s| s.fill_color(name2color(species)));
 
                     // Left tail
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
-                    for (k, g) in lefts.iter().enumerate() {
+                    for (k, g) in left_tail.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
                         let drawn = draw_gene(
                             svg,
                             xstart,
                             y,
-                            g.1.to_string() == direction,
-                            gene2color(&g.0),
-                            &g.0,
+                            true,
+                            colormap
+                                .get(&g.clone())
+                                .unwrap_or(&StyleColor::String("#aaa".to_string())),
+                            &g,
                         );
-                        if g.0 == ancestral {
+                        if g == ancestral {
                             drawn.style(|s| {
                                 s.stroke_width(2.)
                                     .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
@@ -414,17 +261,19 @@ fn draw_tree(
 
                     // Right tail
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
-                    for (k, g) in rights.iter().enumerate() {
+                    for (k, g) in right_tail.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
                         let drawn = draw_gene(
                             svg,
                             xstart,
                             y,
-                            g.1.to_string() == direction,
-                            gene2color(&g.0),
-                            &g.0,
+                            true, // g.1.to_string() == direction,
+                            colormap
+                                .get(&g.clone())
+                                .unwrap_or(&StyleColor::String("#aaa".to_string())),
+                            &g,
                         );
-                        if g.0 == ancestral {
+                        if g == ancestral {
                             drawn.style(|s| {
                                 s.stroke_width(2.)
                                     .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
@@ -432,13 +281,13 @@ fn draw_tree(
                         }
                     }
                     links.push((
-                        lefts.iter().map(|x| x.0.clone()).collect(),
+                        left_tail.iter().map(|x| x.clone()).collect(),
                         ancestral.into(),
-                        rights.iter().map(|x| x.0.clone()).collect(),
+                        right_tail.iter().map(|x| x.clone()).collect(),
                     ));
                 } else {
                     // The node was not found in the database
-                    eprintln!("{} -- {} not found", name, protein_name);
+                    eprintln!("{} -- {} not found", name, gene_name);
                     links.push((Vec::new(), name.into(), Vec::new()));
                 }
                 y += 20.;
@@ -449,9 +298,8 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
             y = draw_tree(
                 svg,
-                db,
-                reversed,
-                reference.clone(),
+                &genes,
+                &colormap,
                 depth,
                 tree,
                 child,
@@ -485,9 +333,9 @@ fn draw_links(
             let x1 = xbase - i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
                 w[1].0
-                .iter()
-                .enumerate()
-                .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase - j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
@@ -505,9 +353,9 @@ fn draw_links(
             let x1 = xbase + i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
                 w[1].2
-                .iter()
-                .enumerate()
-                .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase + j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
@@ -524,38 +372,8 @@ fn draw_links(
     }
 }
 
-fn get_gene(
-    db: &mut Connection,
-    name: &str,
-) -> std::result::Result<(String, String, String, i32, i32, Vec<String>, Vec<String>), rusqlite::Error> {
-    db.query_row(ANCESTRAL_QUERY, &[&name], |r| {
-        let ancestral: String = r.get("ancestral").unwrap();
-        let species: String = r.get("species").unwrap();
-        let chr: String = r.get("chr").unwrap();
-        let pos: i32 = r.get("start").unwrap();
-        let t_len: i32 = r.get("t_len").unwrap();
-
-        let left_tail: String = r.get("left_tail_names").unwrap();
-        let left_tail = left_tail.split(".").collect::<Vec<_>>().iter().rev().take(WINDOW as usize).map(|x| x.to_string()).collect();
-
-        let right_tail: String = r.get("right_tail_names").unwrap();
-        let right_tail = right_tail.split(".").take(WINDOW as usize).map(|x| x.to_string()).collect();
-
-        Ok((ancestral, species, chr, pos, t_len, left_tail, right_tail))
-    })
-}
-
-fn draw_html(
-    db: &mut Connection,
-    reversed: &Option<HashMap<(String, String), bool>>,
-    tree: &Tree,
-) -> HtmlNode {
-    fn process_children(
-        tree: &Tree,
-        node: usize,
-        db: &mut Connection,
-        reversed: &Option<HashMap<(String, String), bool>>,
-    ) -> HtmlNode {
+fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
+    fn process(tree: &Tree, node: usize, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
         let descendants = tree.descendants(node);
         let mut common_ancestral = String::new();
         let clustered = {
@@ -565,16 +383,21 @@ fn draw_html(
                 .filter_map(|&d| {
                     if let Some(name) = &tree[d].name {
                         let gene_name = name.split('#').next().unwrap();
-                        if let Ok((ancestral, species, chr, pos, _t_len, left, right)) = get_gene(db, gene_name) {
-                            // let (left, right) = tails(db, &species, &chr, pos, WINDOW);
+                        if let Some(DbGene {
+                            ancestral,
+                            left_tail,
+                            right_tail,
+                            ..
+                        }) = genes.get(gene_name)
+                        {
                             common_ancestral = ancestral.to_owned();
                             Some((
                                 d,
-                                left.iter()
-                                // .map(|g| &g.0)
+                                left_tail
+                                    .iter()
                                     .rev() // XXX Pour que les POA partent bien du bout
                                     .chain([MARKER.to_owned()].iter())
-                                    .chain(right.iter()) // .map(|g| &g.0))
+                                    .chain(right_tail.iter())
                                     .cloned()
                                     .collect::<Vec<String>>(),
                             ))
@@ -621,10 +444,10 @@ fn draw_html(
                 Some(
                     (0..alignment[0].len())
                         .map(|i| {
-                            for kk in alignment.iter().map(|a| &a[i]) {
-                                let kkk = kk.chars().take(18).collect::<String>();
-                                // print!(" {:<18} ", kkk);
-                            }
+                            // for kk in alignment.iter().map(|a| &a[i]) {
+                            //     let kkk = kk.chars().take(18).collect::<String>();
+                            //     print!(" {:<18} ", kkk);
+                            // }
                             let count = if false {
                                 alignment.iter().filter(|a| a[i] != EMPTY).count() as f32
                             } else {
@@ -654,7 +477,10 @@ fn draw_html(
                                                 color: if name == EMPTY || name == INDEL {
                                                     "#ccc".to_string()
                                                 } else {
-                                                    gene2color(&name).to_hex_string()
+                                                    colormap
+                                                        .get(&name.clone())
+                                                        .map(|c| c.to_hex_string())
+                                                        .unwrap_or("#aaa".to_string())
                                                 },
                                             },
                                             v as f32 / count,
@@ -674,35 +500,31 @@ fn draw_html(
         let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
             if let Some(name) = &tree[node].name {
                 let gene_name = name.split('#').next().unwrap();
-                if let Ok((ancestral, species, chr, pos, t_len, left_tail, right_tail)) = get_gene(db, gene_name) {
-                    common_ancestral = ancestral.clone();
-                    let (proto_lefts, proto_rights) = (left_tail, right_tail); // tails(db, &species, &chr, pos, WINDOW);
-                    let refp = tree.siblings(node).iter().next().map(|n| {
-                        tree[*n]
-                            .name
-                            .as_ref()
-                            .unwrap()
-                            .split('#')
-                            .next()
-                            .unwrap()
-                            .clone()
-                    });
-                    let (lefts, rights) = if let Some(refp) = refp {
-                        if *gene_name != *refp
-                            && *reversed
-                            .as_ref()
-                            .and_then(|r| r.get(&(refp.to_string(), gene_name.to_owned())))
-                            .unwrap_or(&false)
-                        {
-                            (proto_rights, proto_lefts)
-                        } else {
-                            (proto_lefts, proto_rights)
-                        }
+                if let Some(DbGene {
+                    ancestral,
+                    species,
+                    chr,
+                    t_len,
+                    left_tail,
+                    right_tail,
+                    ..
+                }) = genes.get(gene_name)
+                {
+                    common_ancestral = ancestral.to_owned();
+                    let (proto_lefts, proto_rights) = (left_tail, right_tail);
+                    let (lefts, rights) = if true {
+                        (proto_rights, proto_lefts)
                     } else {
                         (proto_lefts, proto_rights)
                     };
                     (
-                        (species, chr, gene_name.to_owned(), ancestral, t_len),
+                        (
+                            species.to_owned(),
+                            chr.to_owned(),
+                            gene_name.to_owned(),
+                            ancestral.to_owned(),
+                            *t_len,
+                        ),
                         (
                             lefts
                                 .into_iter()
@@ -712,7 +534,10 @@ fn draw_html(
                                     color: if g == EMPTY {
                                         "#111".into()
                                     } else {
-                                        gene2color(&g).to_hex_string()
+                                        colormap
+                                            .get(&g.clone())
+                                            .map(|c| c.to_hex_string())
+                                            .unwrap_or("#aaa".to_string())
                                     },
                                 })
                                 .collect::<Vec<_>>(),
@@ -720,7 +545,14 @@ fn draw_html(
                                 .into_iter()
                                 .map(|g| Gene {
                                     name: g.clone(),
-                                    color: gene2color(&g).to_hex_string(),
+                                    color: if g == EMPTY {
+                                        "#111".into()
+                                    } else {
+                                        colormap
+                                            .get(&g.clone())
+                                            .map(|c| c.to_hex_string())
+                                            .unwrap_or("#aaa".to_string())
+                                    },
                                 })
                                 .collect::<Vec<_>>(),
                         ),
@@ -765,12 +597,16 @@ fn draw_html(
                 .map(|children| {
                     children
                         .iter()
-                        .map(|n| process_children(tree, *n, db, reversed))
+                        .map(|n| process(tree, *n, genes, colormap))
                         .collect()
                 })
                 .unwrap_or(vec![]),
             isDuplication: tree[node].is_duplication(),
-            confidence: tree[node].data.get("DCS").and_then(|x| x.parse::<f32>().ok()).unwrap_or(0.0),
+            confidence: tree[node]
+                .data
+                .get("DCS")
+                .and_then(|x| x.parse::<f32>().ok())
+                .unwrap_or(0.0),
             repr: Landscape {
                 lefts,
                 rights,
@@ -783,32 +619,25 @@ fn draw_html(
         }
     }
 
-    process_children(tree, 0, db, reversed)
+    process(tree, 0, genes, colormap)
 }
 
-fn process_file(
-    filename: &str,
-    db_filename: &str,
-    direction_filename: Option<&str>,
-    graph_type: &str,
-) {
+struct Settings {
+    colorize_per_duplication: bool,
+    colorize_all: bool,
+}
+
+fn process_file(filename: &str, db_filename: &str, graph_type: &str, settings: Settings) {
     println!("Processing {}", filename);
     let t = Tree::from_filename(filename).unwrap();
     let mut db =
         Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-    let reversed = direction_filename.map(|fname| {
-        BufReader::new(File::open(fname).unwrap())
-            .lines()
-            .map(|l| {
-                let l = l
-                    .unwrap()
-                    .split('\t')
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>();
-                ((l[0].to_owned(), l[1].to_owned()), l[2] == "1")
-            })
-            .collect::<HashMap<(String, String), bool>>()
-    });
+    let genes = make_genes_cache(&t, &mut db);
+    let colormap = if settings.colorize_per_duplication {
+        make_colormap_per_duplication(&t, &genes, settings.colorize_all)
+    } else {
+        make_colormap(&t, &genes)
+    };
 
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
@@ -831,9 +660,9 @@ fn process_file(
             t[n].name
                 .as_ref()
                 .and_then(|name| name.split('#').next())
-                .and_then(|gene_name| get_gene(&mut db, gene_name).ok())
+                .and_then(|gene_name| genes.get(gene_name))
         })
-        .map(|x| x.4)
+        .map(|x| x.t_len)
         .filter(|&x| x >= 0)
         .collect::<Vec<_>>();
 
@@ -843,11 +672,11 @@ fn process_file(
     match graph_type {
         "flat" => {
             draw_background(
-                &mut svg, &mut db, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+                &mut svg, &genes, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
             );
             let mut links = Vec::new();
             draw_tree(
-                &mut svg, &mut db, &reversed, None, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+                &mut svg, &genes, &colormap, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
                 &mut links,
             );
             draw_links(&mut svg, &links, 50.0, xlabels);
@@ -880,7 +709,7 @@ fn process_file(
             context.insert("max_t_len", max_t_len);
             context.insert(
                 "data",
-                &serde_json::to_string_pretty(&draw_html(&mut db, &reversed, &t)).unwrap(),
+                &serde_json::to_string_pretty(&draw_html(&t, &genes, &colormap)).unwrap(),
             );
             tera.render_to("genominicus.html", &context, &mut out)
                 .unwrap();
@@ -913,11 +742,14 @@ fn main() {
                 .multiple(true),
         )
         .arg(
-            Arg::with_name("reversed")
-                .help("A file containing directional pairings")
-                .takes_value(true)
-                .long("direction")
-                .short("D"),
+            Arg::with_name("colorize_per_duplication")
+                .help("Introduce a new set of color gradients at each duplicated node")
+                .long("colorize-duplications"),
+        )
+        .arg(
+            Arg::with_name("colorize_all")
+                .help("Ensure that all genes are colorized")
+                .long("colorize-all"),
         )
         .get_matches();
 
@@ -925,8 +757,11 @@ fn main() {
         process_file(
             filename,
             &value_t!(args, "database", String).unwrap(),
-            args.value_of("reversed"),
             &value_t!(args, "type", String).unwrap(),
+            Settings {
+                colorize_per_duplication: args.is_present("colorize_per_duplication"),
+                colorize_all: args.is_present("colorize_all"),
+            },
         );
     }
 }
