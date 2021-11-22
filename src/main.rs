@@ -246,18 +246,18 @@ fn draw_tree(
                     }
 
                     // The Gene
-                    // draw_gene(
-                    //     svg,
-                    //     xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
-                    //     y,
-                    //     true,
-                    //     gene2color(&ancestral),
-                    //     &ancestral,
-                    // )
-                    // .style(|s| {
-                    //     s.stroke_width(2.)
-                    //         .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
-                    // });
+                    draw_gene(
+                        svg,
+                        xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
+                        y,
+                        true,
+                        &gene2color(&ancestral),
+                        &ancestral,
+                    )
+                    .style(|s| {
+                        s.stroke_width(2.)
+                            .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
+                    });
 
                     // Right tail
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
