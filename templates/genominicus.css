@@ -27,9 +27,9 @@ div.node {
 
 div.node-container {
     margin-left: 2rem;
-    border-left: 1px solid #444;
-    border-top: 1px solid #444;
-    border-bottom: 1px solid #444;
+    border-left: 1px solid #aaa;
+    border-top: 1px solid #aaa;
+    border-bottom: 1px solid #aaa;
     margin-top: 5px;
     margin-bottom: 5px;
 }
@@ -59,8 +59,8 @@ div.node > svg {
 
 .node.D > .node {
     border-left: 0;
-    border-top: 5px solid;
-    border-bottom: 5px solid;
+    border-top: 3px solid;
+    border-bottom: 3px solid;
     margin: 0;
 }
 .node.D > .node:not(:last-child) {
