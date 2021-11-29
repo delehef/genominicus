@@ -280,11 +280,7 @@ fn draw_tree(
                             });
                         }
                     }
-                    links.push((
-                        left_tail.to_vec(),
-                        ancestral.into(),
-                        right_tail.to_vec(),
-                    ));
+                    links.push((left_tail.to_vec(), ancestral.into(), right_tail.to_vec()));
                 } else {
                     // The node was not found in the database
                     eprintln!("{} -- {} not found", name, gene_name);
@@ -313,9 +309,19 @@ fn draw_tree(
     }
 
     if node.is_duplication() {
+        let dcs = node.data.get("DCS").and_then(|s| s.parse::<f32>().ok());
+
+        svg.text()
+            .pos(xoffset - FONT_SIZE, yoffset - FONT_SIZE)
+            .text(
+                dcs.map(|s| format!("DCS = {:.2}", s))
+                    .unwrap_or("?".to_string()),
+
+            );
+        let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
-            .style(|s| s.fill_color(StyleColor::Percent(0.8, 0., 0.)));
+            .style(|s| s.fill_color(StyleColor::Percent(1.0 - dcs, dcs, 0.)));
     }
     y
 }
