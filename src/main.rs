@@ -174,11 +174,12 @@ fn draw_tree(
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
-    let children = node
+    let mut children = node
         .children
         .as_ref()
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or_default();
+    children.sort_by_key(|c| c.name.as_ref().map(|s| s.as_str()).unwrap_or("Z"));
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
