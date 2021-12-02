@@ -317,12 +317,15 @@ fn draw_tree(
             .text(
                 dcs.map(|s| format!("DCS = {:.2}", s))
                     .unwrap_or("?".to_string()),
-
             );
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
             .style(|s| s.fill_color(StyleColor::Percent(1.0 - dcs, dcs, 0.)));
+    } else if !node.is_leaf() {
+        svg.polygon()
+            .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
+            .style(|s| s.fill_color(StyleColor::Percent(0., 0., 0.)));
     }
     y
 }
