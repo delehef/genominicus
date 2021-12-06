@@ -80,6 +80,7 @@ fn get_gene(db: &mut Connection, name: &str) -> std::result::Result<DbGene, rusq
             .rev()
             .take(WINDOW as usize)
             .map(|x| x.to_string())
+            .filter(|x| !x.is_empty())
             .collect();
 
         let right_tail: String = r.get("right_tail_names").unwrap();
@@ -87,6 +88,7 @@ fn get_gene(db: &mut Connection, name: &str) -> std::result::Result<DbGene, rusq
             .split('.')
             .take(WINDOW as usize)
             .map(|x| x.to_string())
+            .filter(|x| !x.is_empty())
             .collect();
 
         Ok(DbGene {
