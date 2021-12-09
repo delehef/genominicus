@@ -198,7 +198,7 @@ pub fn make_colormap_per_duplication(
 ) -> ColorMap {
     fn create_gradient(t: &Tree, leave_nodes: &[usize], genes: &GeneCache, colormap: &mut ColorMap) {
         // No need to create a custom gradient for single-gene dups
-        if leave_nodes.len() < 2 {
+        if leave_nodes.len() <= 2 {
             return;
         }
         // Chose a random leaf from the leaves featuring the longest tails as a reference

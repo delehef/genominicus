@@ -315,7 +315,7 @@ fn draw_tree(
         svg.text()
             .pos(xoffset - FONT_SIZE, yoffset - FONT_SIZE)
             .text(
-                dcs.map(|s| format!("DCS = {:.2}", s))
+                dcs.map(|s| format!("{}%", (s*100.) as u8))
                     .unwrap_or("?".to_string()),
             );
         let dcs = dcs.unwrap_or(0.0);
