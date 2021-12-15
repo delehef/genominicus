@@ -6,6 +6,7 @@ use rusqlite::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use svarog::*;
+use rand::prelude::*;
 
 const ANCESTRAL_QUERY: &str = concat!(
     "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where gene=?",
@@ -223,11 +224,16 @@ pub fn make_colormap_per_duplication(
 
         // Use its syntenic landscape to fill the color map
         // and the reference left and right tails
-        let start_color = name2color(&ref_left_tail[0]).to_percent();
-        let end_color = name2color(&ref_right_tail[ref_right_tail.len() - 1]).to_percent();
+        let mut rng = rand::thread_rng();
+        let base = Rgb::new(rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>(), None);
+        let mut hsl: Hsl = base.into();
+        hsl.set_lightness(hsl.lightness().clamp(30., 40.));
+        let base: Rgb = hsl.into();
+        let base = (base.red() as f32/255., base.green() as f32/255., base.blue() as f32/255.);
+
         let gradient = Gradient::new(vec![
-            LinSrgb::new(start_color.0, start_color.1, start_color.2),
-            LinSrgb::new(end_color.0, end_color.1, end_color.2),
+            LinSrgb::new(base.0, base.1, base.2),
+            LinSrgb::new(1.0 - base.0, 1.0 - base.1, 1.0 - base.2),
         ])
         .take(ref_left_tail.len() + ref_right_tail.len())
         .collect::<Vec<_>>();
