@@ -43,6 +43,13 @@ fn main() {
                 .multiple(true),
         )
         .arg(
+            Arg::with_name("OUT")
+                .short("o")
+                .long("out")
+                .help("Output filename")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("colorize_per_duplication")
                 .help("Introduce a new set of color gradients at each duplicated node")
                 .long("colorize-duplications"),
@@ -69,6 +76,11 @@ fn main() {
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
         println!("Processing {}", filename);
+        let mut out_filename =
+            std::path::PathBuf::from(value_t!(args, "OUT", String).unwrap_or(filename.to_string()));
+        out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
+        let out_filename = out_filename.to_str().unwrap();
+
         let t = Tree::from_filename(filename).unwrap();
         let genes = make_genes_cache(&t, &mut db);
         let colormap = if colorize_per_duplication {
@@ -78,14 +90,16 @@ fn main() {
         };
         match graph_type.as_str() {
             "flat" => {
-                render::flat::render(&t, &genes, &colormap, &format!("{}.svg", filename));
+                render::flat::render(&t, &genes, &colormap, &format!("{}-flat.svg", out_filename));
             }
-            "html" => render::html::render(&t, &genes, &colormap, &format!("{}.html", &filename)),
+            "html" => {
+                render::html::render(&t, &genes, &colormap, &format!("{}.html", out_filename))
+            }
             "barcode" => {
                 render::barcode::render(
                     &t,
                     &value_t!(args, "species-tree", String).unwrap(),
-                    &format!("{}-barcode.svg", filename),
+                    &format!("{}-barcode.svg", out_filename),
                 );
             }
             _ => unimplemented!(),
