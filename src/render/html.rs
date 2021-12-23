@@ -1,0 +1,328 @@
+use crate::align;
+use crate::utils::*;
+use newick::*;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::File;
+use tera::{Context, Tera};
+
+#[derive(Serialize, Deserialize)]
+struct PolyGene {
+    genes: Vec<(Gene, f32)>,
+}
+#[derive(Serialize, Deserialize)]
+struct Gene {
+    color: String,
+    name: String,
+}
+#[derive(Serialize, Deserialize)]
+struct Landscape {
+    lefts: Vec<Gene>,
+    me: Gene,
+    rights: Vec<Gene>,
+}
+#[derive(Serialize, Deserialize)]
+struct HtmlNode {
+    species: String,
+    chr: String,
+    gene: String,
+    ancestral: String,
+    t_len: i32,
+    color: String,
+    children: Vec<HtmlNode>,
+
+    isDuplication: bool,
+    confidence: f32,
+    repr: Landscape,
+    clustered: Option<Vec<PolyGene>>,
+}
+
+fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
+    fn process(tree: &Tree, node: usize, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
+        let descendants = tree.descendants(node);
+        let mut common_ancestral = String::new();
+        let clustered = {
+            // Node ID to tail mapping
+            let tails = descendants
+                .iter()
+                .filter_map(|&d| {
+                    if let Some(name) = &tree[d].name {
+                        let gene_name = name.split('#').next().unwrap();
+                        if let Some(DbGene {
+                            ancestral,
+                            left_tail,
+                            right_tail,
+                            ..
+                        }) = genes.get(gene_name)
+                        {
+                            common_ancestral = ancestral.to_owned();
+                            Some((
+                                d,
+                                left_tail
+                                    .iter()
+                                    .rev() // XXX Pour que les POA partent bien du bout
+                                    .chain([MARKER.to_owned()].iter())
+                                    .chain(right_tail.iter())
+                                    .cloned()
+                                    .collect::<Vec<String>>(),
+                            ))
+                        } else {
+                            eprintln!("{} -- {} not found", name, gene_name);
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect::<HashMap<_, _>>();
+
+            if !tails.is_empty() {
+                let (g, heads) = align::align(&tails);
+                let mut alignment = align::poa_to_strings(&g, &heads)
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if false {
+                    // Differentiate between tail of shorter alignments and actual indels
+                    // Left tail
+                    alignment.iter_mut().for_each(|a| {
+                        for pos in a.iter_mut() {
+                            if pos == INDEL {
+                                *pos = "".to_string();
+                            } else {
+                                break;
+                            }
+                        }
+                    });
+                    // Right tail
+                    alignment.iter_mut().for_each(|a| {
+                        for pos in a.iter_mut().rev() {
+                            if pos == INDEL {
+                                *pos = "".to_string();
+                            } else {
+                                break;
+                            }
+                        }
+                    });
+                }
+
+                Some(
+                    (0..alignment[0].len())
+                        .map(|i| {
+                            // for kk in alignment.iter().map(|a| &a[i]) {
+                            //     let kkk = kk.chars().take(18).collect::<String>();
+                            //     print!(" {:<18} ", kkk);
+                            // }
+                            let count = if false {
+                                alignment.iter().filter(|a| a[i] != EMPTY).count() as f32
+                            } else {
+                                alignment.len() as f32
+                            };
+
+                            let mut counts: HashMap<String, i32> = HashMap::new();
+                            alignment
+                                .iter()
+                                .map(|a| &a[i])
+                                .for_each(|g| *counts.entry(g.clone()).or_insert(0) += 1);
+                            PolyGene {
+                                genes: counts
+                                    .into_iter()
+                                    .filter_map(|(name, v)| {
+                                        // if DROP_EMPTY && (name == EMPTY || name == INDEL) {
+                                        //     None
+                                        // } else {
+                                        let name = if name != MARKER {
+                                            &name
+                                        } else {
+                                            &common_ancestral
+                                        };
+                                        Some((
+                                            Gene {
+                                                name: name.clone(),
+                                                color: if name == EMPTY || name == INDEL {
+                                                    "#ccc".to_string()
+                                                } else {
+                                                    colormap
+                                                        .get(&name.clone())
+                                                        .map(|c| c.to_hex_string())
+                                                        .unwrap_or_else(|| "#aaa".to_string())
+                                                },
+                                            },
+                                            v as f32 / count,
+                                        ))
+                                        // }
+                                    })
+                                    .collect::<Vec<(Gene, f32)>>(),
+                            }
+                        })
+                        .collect::<Vec<PolyGene>>(),
+                )
+            } else {
+                None
+            }
+        };
+
+        let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
+            if let Some(name) = &tree[node].name {
+                let gene_name = name.split('#').next().unwrap();
+                if let Some(DbGene {
+                    ancestral,
+                    species,
+                    chr,
+                    t_len,
+                    left_tail,
+                    right_tail,
+                    ..
+                }) = genes.get(gene_name)
+                {
+                    common_ancestral = ancestral.to_owned();
+                    let (proto_lefts, proto_rights) = (left_tail, right_tail);
+                    let (lefts, rights) = if true {
+                        (proto_rights, proto_lefts)
+                    } else {
+                        (proto_lefts, proto_rights)
+                    };
+                    (
+                        (
+                            species.to_owned(),
+                            chr.to_owned(),
+                            gene_name.to_owned(),
+                            ancestral.to_owned(),
+                            *t_len,
+                        ),
+                        (
+                            lefts
+                                .iter()
+                                .rev()
+                                .map(|g| Gene {
+                                    name: g.clone(),
+                                    color: if g == EMPTY {
+                                        "#111".into()
+                                    } else {
+                                        colormap
+                                            .get(&g.clone())
+                                            .map(|c| c.to_hex_string())
+                                            .unwrap_or_else(|| "#aaa".to_string())
+                                    },
+                                })
+                                .collect::<Vec<_>>(),
+                            rights
+                                .iter()
+                                .map(|g| Gene {
+                                    name: g.clone(),
+                                    color: if g == EMPTY {
+                                        "#111".into()
+                                    } else {
+                                        colormap
+                                            .get(&g.clone())
+                                            .map(|c| c.to_hex_string())
+                                            .unwrap_or_else(|| "#aaa".to_string())
+                                    },
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
+                    )
+                } else {
+                    eprintln!("{} -- {} not found", name, gene_name);
+                    (
+                        (
+                            String::new(),
+                            String::new(),
+                            String::new(),
+                            String::new(),
+                            0,
+                        ),
+                        (vec![], vec![]),
+                    )
+                }
+            } else {
+                (
+                    (
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        0,
+                    ),
+                    (vec![], vec![]),
+                )
+            };
+
+        let color = name2color(&species).to_hex_string();
+        HtmlNode {
+            species,
+            chr,
+            gene,
+            ancestral,
+            t_len,
+            color,
+            children: tree[node]
+                .children
+                .as_ref()
+                .map(|children| {
+                    children
+                        .iter()
+                        .map(|n| process(tree, *n, genes, colormap))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            isDuplication: tree[node].is_duplication(),
+            confidence: tree[node]
+                .data
+                .get("DCS")
+                .and_then(|x| x.parse::<f32>().ok())
+                .unwrap_or(0.0),
+            repr: Landscape {
+                lefts,
+                rights,
+                me: Gene {
+                    color: gene2color(&common_ancestral).to_hex_string(),
+                    name: common_ancestral,
+                },
+            },
+            clustered,
+        }
+    }
+
+    process(tree, 0, genes, colormap)
+}
+
+pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
+    let t_lens = t
+        .leaves()
+        .filter_map(|n| {
+            t[n].name
+                .as_ref()
+                .and_then(|name| name.split('#').next())
+                .and_then(|gene_name| genes.get(gene_name))
+        })
+        .map(|x| x.t_len)
+        .filter(|&x| x >= 0)
+        .collect::<Vec<_>>();
+
+    let min_t_len = t_lens.iter().min().unwrap_or(&0);
+    let max_t_len = t_lens.iter().max().unwrap_or(&0);
+    let mut tera = match Tera::new("templates/*.{html,css,js}") {
+        Ok(t) => t,
+        Err(e) => {
+            println!("Parsing error(s): {}", e);
+            ::std::process::exit(1);
+        }
+    };
+    let mut out = File::create(out_filename).unwrap();
+    let mut context = Context::new();
+    tera.autoescape_on(vec![]);
+    context.insert("title", out_filename);
+    context.insert(
+        "comment",
+        &format!("Transcript length: {} to {}", min_t_len, max_t_len),
+    );
+    context.insert("min_t_len", min_t_len);
+    context.insert("max_t_len", max_t_len);
+    context.insert(
+        "data",
+        &serde_json::to_string_pretty(&draw_html(&t, &genes, &colormap)).unwrap(),
+    );
+    tera.render_to("genominicus.html", &context, &mut out)
+        .unwrap();
+}

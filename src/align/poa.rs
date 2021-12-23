@@ -6,7 +6,8 @@ use std::io::prelude::*;
 use petgraph::dot::*;
 use petgraph::prelude::*;
 
-use crate::*;
+use super::*;
+
 pub struct POANode {
     pub nucs: HashMap<SeqID, Nucleotide>,
 }

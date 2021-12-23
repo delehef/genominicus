@@ -6,11 +6,18 @@ use std::collections::HashMap;
 
 use petgraph::prelude::*;
 
-use super::poa::*;
 use super::*;
+use crate::align::poa::*;
+
+mod poa;
 
 const SIMDW: usize = 8;
 const NEG_INF: i32 = -3_000_000;
+
+pub type SeqID = usize;
+pub type Nucleotide = String;
+pub type Sequence = Vec<Nucleotide>;
+pub type Sequences = HashMap<SeqID, Sequence>;
 
 type Alignment = (Vec<Option<NodeIndex>>, Vec<Option<SeqID>>);
 struct AffineNWSettings {
@@ -171,7 +178,7 @@ fn build_matrix(
         for j in 1..m_width {
             H[row + j] = H[pred_row + j - 1]
                 + if nucs[node_id.index()].contains(&seq[j - 1]) {
-                    if seq[j - 1] == "=======FINAL=======" {
+                    if seq[j - 1] == MARKER {
                         100
                     } else {
                         m
@@ -192,7 +199,7 @@ fn build_matrix(
                     H[row + j],
                     H[pred_row + j - 1]
                         + if nucs[node_id.index()].contains(&seq[j - 1]) {
-                            if seq[j - 1] == "=======FINAL=======" {
+                            if seq[j - 1] == MARKER {
                                 100
                             } else {
                                 m
@@ -336,7 +343,7 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
 
             // ...first in the directly preceding node...
             let match_cost = if nucs[node_id.index()].contains(&seq[j - 1]) {
-                if seq[j-1] == "=======FINAL=======" {
+                if seq[j - 1] == MARKER {
                     100
                 } else {
                     m
@@ -415,11 +422,11 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
                 extend_left = true;
                 prev_i = i;
                 prev_j = j - 1;
-                pred_found = true;
+                // pred_found = true;
             } else if hij == H[i * m_width + j - 1] + _g {
                 prev_i = i;
                 prev_j = j - 1;
-                pred_found = true;
+                // pred_found = true;
             }
         }
 

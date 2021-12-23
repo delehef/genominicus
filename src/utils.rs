@@ -2,11 +2,11 @@
 use colorsys::{Hsl, Rgb};
 use newick::*;
 use palette::*;
+use rand::prelude::*;
 use rusqlite::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use svarog::*;
-use rand::prelude::*;
 
 const ANCESTRAL_QUERY: &str = concat!(
     "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where gene=?",
@@ -36,6 +36,10 @@ pub struct DbGene {
 
 pub type GeneCache = HashMap<String, DbGene>;
 pub type ColorMap = HashMap<String, StyleColor>;
+
+pub fn nuc_to_str(nuc: &str) -> String {
+    nuc.to_string()
+}
 
 fn jaccard<T: std::hash::Hash + Eq>(x: &HashSet<T>, y: &HashSet<T>) -> f32 {
     x.intersection(y).count() as f32 / x.union(y).count() as f32
@@ -197,7 +201,12 @@ pub fn make_colormap_per_duplication(
     genes: &GeneCache,
     colorize_all: bool,
 ) -> ColorMap {
-    fn create_gradient(t: &Tree, leave_nodes: &[usize], genes: &GeneCache, colormap: &mut ColorMap) {
+    fn create_gradient(
+        t: &Tree,
+        leave_nodes: &[usize],
+        genes: &GeneCache,
+        colormap: &mut ColorMap,
+    ) {
         // No need to create a custom gradient for single-gene dups
         if leave_nodes.len() <= 2 {
             return;
@@ -229,7 +238,11 @@ pub fn make_colormap_per_duplication(
         let mut hsl: Hsl = base.into();
         hsl.set_lightness(hsl.lightness().clamp(30., 40.));
         let base: Rgb = hsl.into();
-        let base = (base.red() as f32/255., base.green() as f32/255., base.blue() as f32/255.);
+        let base = (
+            base.red() as f32 / 255.,
+            base.green() as f32 / 255.,
+            base.blue() as f32 / 255.,
+        );
 
         let gradient = Gradient::new(vec![
             LinSrgb::new(base.0, base.1, base.2),
