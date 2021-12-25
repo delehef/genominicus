@@ -1,10 +1,11 @@
 use crate::align;
 use crate::utils::*;
+use askama::Template;
 use newick::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use tera::{Context, Tera};
+use std::io::prelude::*;
 
 #[derive(Serialize, Deserialize)]
 struct PolyGene {
@@ -288,6 +289,22 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
 }
 
 pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
+    #[derive(Template)]
+    #[template(path = "genominicus.html", escape="none")]
+    struct GenominicusTemplate<'a> {
+        css: &'a str,
+        js_svg: &'a str,
+        js_genominicus: &'a str,
+
+        title: &'a str,
+        comment: &'a str,
+
+        min_t_len: &'a i32,
+        max_t_len: &'a i32,
+
+        data: &'a str,
+    }
+
     let t_lens = t
         .leaves()
         .filter_map(|n| {
@@ -302,27 +319,17 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
 
     let min_t_len = t_lens.iter().min().unwrap_or(&0);
     let max_t_len = t_lens.iter().max().unwrap_or(&0);
-    let mut tera = match Tera::new("templates/*.{html,css,js}") {
-        Ok(t) => t,
-        Err(e) => {
-            println!("Parsing error(s): {}", e);
-            ::std::process::exit(1);
-        }
+
+    let html = GenominicusTemplate {
+        css: include_str!("../../templates/genominicus.css"),
+        js_genominicus: include_str!("../../templates/genominicus.js"),
+        js_svg: include_str!("../../templates/svg.min.js"),
+        title: out_filename,
+        comment: &format!("Transcript length: {} to {}", min_t_len, max_t_len),
+        min_t_len,
+        max_t_len,
+        data: &serde_json::to_string_pretty(&draw_html(&t, &genes, &colormap)).unwrap(),
     };
     let mut out = File::create(out_filename).unwrap();
-    let mut context = Context::new();
-    tera.autoescape_on(vec![]);
-    context.insert("title", out_filename);
-    context.insert(
-        "comment",
-        &format!("Transcript length: {} to {}", min_t_len, max_t_len),
-    );
-    context.insert("min_t_len", min_t_len);
-    context.insert("max_t_len", max_t_len);
-    context.insert(
-        "data",
-        &serde_json::to_string_pretty(&draw_html(&t, &genes, &colormap)).unwrap(),
-    );
-    tera.render_to("genominicus.html", &context, &mut out)
-        .unwrap();
+    let _ = out.write(html.render().unwrap().as_bytes()).unwrap();
 }

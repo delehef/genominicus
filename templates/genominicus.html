@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <title>{{ title }}</title>
     <style>
-      {% include "genominicus.css" %}
+      {{ css }}
     </style>
   </head>
   <body>
@@ -12,7 +12,7 @@
     </div>
   </body>
   <script>
-      {% include "svg.min.js" %}
+    {{ js_svg }}
   </script>
   <script>
     let data = {{ data }};
@@ -20,6 +20,6 @@
     let max_t_len = {{ max_t_len }};
   </script>
   <script>
-      {% include "genominicus.js" %}
+    {{ js_genominicus }}
   </script>
 </html>
