@@ -207,58 +207,65 @@ pub fn make_colormap_per_duplication(
         genes: &GeneCache,
         colormap: &mut ColorMap,
     ) {
-        // No need to create a custom gradient for single-gene dups
-        if leave_nodes.len() <= 2 {
+        if leave_nodes.len() < 2 {
             return;
         }
-        // Chose a random leaf from the leaves featuring the longest tails as a reference
-        let mut leaves = leave_nodes
+        let tails = leave_nodes
             .iter()
             .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
             .filter_map(|name| genes.get(name))
-            .map(|g| (g.species.clone(), g.left_tail.clone(), g.right_tail.clone()))
+            .map(|g| {
+                g.left_tail
+                    .iter()
+                    .chain(g.right_tail.iter())
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
-        leaves.sort_by(|a, b| {
-            let len_a = a.1.len() + a.2.len();
-            let len_b = b.1.len() + b.2.len();
-            // Select by species name to discriminate between equal syntenic landscapes lenghts
-            if len_a == len_b {
-                b.0.cmp(&a.0)
-            } else {
-                len_b.cmp(&len_a)
-            }
-        });
-        let ref_left_tail = &leaves[0].1;
-        let ref_right_tail = &leaves[0].2;
+        let tailsets = tails.iter().map(|t| HashSet::<_>::from_iter(t.iter().map(|g| md5::compute(g)))).collect::<Vec<_>>();
+        let scores = tails
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let mut s = 0;
+                for (j, _) in tails.iter().enumerate() {
+                    if i != j {
+                        s += (&tailsets[i] & &tailsets[j]).len();
+                    }
+                }
+                s
+            })
+            .collect::<Vec<_>>();
+        let ref_tail = &tails[scores
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, s)| *s)
+            .map(|(i, _)| i)
+            .unwrap_or(0)];
 
-        // Use its syntenic landscape to fill the color map
-        // and the reference left and right tails
         let mut rng = rand::thread_rng();
-        let base = Rgb::new(rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>(), None);
-        let mut hsl: Hsl = base.into();
-        hsl.set_lightness(hsl.lightness().clamp(30., 40.));
-        let base: Rgb = hsl.into();
-        let base = (
-            base.red() as f32 / 255.,
-            base.green() as f32 / 255.,
-            base.blue() as f32 / 255.,
+        let start = Hsv::new(
+            360. * rng.gen::<f64>(),
+            0.5 + rng.gen::<f64>() / 2.,
+            0.5 + rng.gen::<f64>() / 2.,
+        );
+        let end = Hsv::new(
+            360. * rng.gen::<f64>(),
+            0.5 + rng.gen::<f64>() / 2.,
+            0.5 + rng.gen::<f64>() / 2.,
         );
 
-        let gradient = Gradient::new(vec![
-            LinSrgb::new(base.0, base.1, base.2),
-            LinSrgb::new(1.0 - base.0, 1.0 - base.1, 1.0 - base.2),
-        ])
-        .take(ref_left_tail.len() + ref_right_tail.len())
-        .collect::<Vec<_>>();
-        for (i, gene_name) in ref_left_tail
-            .iter()
-            .chain(ref_right_tail.iter())
-            .enumerate()
-        {
-            let color = &gradient[i];
+        let gradient = Gradient::new(vec![start, end])
+            .take(ref_tail.len())
+            .collect::<Vec<_>>();
+        for (i, gene_name) in ref_tail.iter().enumerate() {
+            let color = palette::rgb::Rgb::from_color(gradient[i]);
             colormap
                 .entry(gene_name.to_string())
-                .or_insert(StyleColor::Percent(color.red, color.green, color.blue));
+                .or_insert(StyleColor::Percent(
+                    color.red as f32,
+                    color.green as f32,
+                    color.blue as f32,
+                ));
         }
     }
 
