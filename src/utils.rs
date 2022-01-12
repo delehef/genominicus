@@ -221,7 +221,10 @@ pub fn make_colormap_per_duplication(
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let tailsets = tails.iter().map(|t| HashSet::<_>::from_iter(t.iter().map(|g| md5::compute(g)))).collect::<Vec<_>>();
+        let tailsets = tails
+            .iter()
+            .map(|t| HashSet::<_>::from_iter(t.iter().map(|g| md5::compute(g))))
+            .collect::<Vec<_>>();
         let scores = tails
             .iter()
             .enumerate()
@@ -321,25 +324,40 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                 return;
             }
             // Chose a random leaf from the leaves featuring the longest tails as a reference
-            let mut leaves = leave_nodes
+            let mut tails = leave_nodes
                 .iter()
                 .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
                 .filter_map(|name| genes.get(name))
                 .map(|g| (g.species.clone(), g.left_tail.clone(), g.right_tail.clone()))
                 .collect::<Vec<_>>();
-            leaves.sort_by(|a, b| {
-                let len_a = a.1.len() + a.2.len();
-                let len_b = b.1.len() + b.2.len();
-                // Select by species name to discriminate between equal syntenic landscapes lenghts
-                if len_a == len_b {
-                    b.0.cmp(&a.0)
-                } else {
-                    len_b.cmp(&len_a)
-                }
-            });
+            let tailsets = tails
+                .iter()
+                .map(|t| {
+                    HashSet::<_>::from_iter(t.1.iter().chain(t.2.iter()).map(|g| md5::compute(g)))
+                })
+                .collect::<Vec<_>>();
+            let scores = tails
+                .iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    let mut s = 0;
+                    for (j, _) in tails.iter().enumerate() {
+                        if i != j {
+                            s += (&tailsets[i] & &tailsets[j]).len();
+                        }
+                    }
+                    s
+                })
+                .collect::<Vec<_>>();
 
-            let ref_left_tail: HashSet<&String> = HashSet::from_iter(&leaves[0].1);
-            let ref_right_tail: HashSet<&String> = HashSet::from_iter(&leaves[0].2);
+            let ref_id = scores
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, s)| *s)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let ref_left_tail: HashSet<&String> = HashSet::from_iter(&tails[ref_id].1);
+            let ref_right_tail: HashSet<&String> = HashSet::from_iter(&tails[ref_id].2);
 
             leave_nodes
                 .iter()
