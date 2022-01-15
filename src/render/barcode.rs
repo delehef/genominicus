@@ -20,7 +20,7 @@ pub fn draw_species_blocks(
                 t[n].name
                     .as_ref()
                     .unwrap()
-                    .split("#")
+                    .split('#')
                     .nth(1)
                     .unwrap()
                     .to_owned()
@@ -47,7 +47,7 @@ pub fn draw_species_blocks(
     let species_in_tree = t
         .leaf_names()
         .iter()
-        .map(|(_, s)| s.as_ref().unwrap().split("#").nth(1).unwrap())
+        .map(|(_, s)| s.as_ref().unwrap().split('#').nth(1).unwrap())
         .collect::<HashSet<&str>>();
 
     let species = species_tree
@@ -124,10 +124,10 @@ pub fn render(
     out_filename: &str,
     filter_species_tree: bool,
 ) {
-    println!("Reading {}", &species_tree_filename);
-    let species_tree = Tree::from_filename(&species_tree_filename).unwrap();
+    println!("Reading {}", species_tree_filename);
+    let species_tree = Tree::from_filename(species_tree_filename).unwrap();
     let mut svg = SvgDrawing::new();
-    draw_species_blocks(&mut svg, &t, &species_tree, filter_species_tree);
+    draw_species_blocks(&mut svg, t, &species_tree, filter_species_tree);
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();

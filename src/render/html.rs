@@ -328,7 +328,7 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
         comment: &format!("Transcript length: {} to {}", min_t_len, max_t_len),
         min_t_len,
         max_t_len,
-        data: &serde_json::to_string_pretty(&draw_html(&t, &genes, &colormap)).unwrap(),
+        data: &serde_json::to_string_pretty(&draw_html(t, genes, colormap)).unwrap(),
     };
     let mut out = File::create(out_filename).unwrap();
     let _ = out.write(html.render().unwrap().as_bytes()).unwrap();

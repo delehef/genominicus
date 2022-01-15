@@ -223,7 +223,7 @@ pub fn make_colormap_per_duplication(
             .collect::<Vec<_>>();
         let tailsets = tails
             .iter()
-            .map(|t| HashSet::<_>::from_iter(t.iter().map(|g| md5::compute(g))))
+            .map(|t| HashSet::<_>::from_iter(t.iter().map(md5::compute)))
             .collect::<Vec<_>>();
         let scores = tails
             .iter()
@@ -324,7 +324,7 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                 return;
             }
             // Chose a random leaf from the leaves featuring the longest tails as a reference
-            let mut tails = leave_nodes
+            let tails = leave_nodes
                 .iter()
                 .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
                 .filter_map(|name| genes.get(name))
@@ -332,9 +332,7 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                 .collect::<Vec<_>>();
             let tailsets = tails
                 .iter()
-                .map(|t| {
-                    HashSet::<_>::from_iter(t.1.iter().chain(t.2.iter()).map(|g| md5::compute(g)))
-                })
+                .map(|t| HashSet::<_>::from_iter(t.1.iter().chain(t.2.iter()).map(md5::compute)))
                 .collect::<Vec<_>>();
             let scores = tails
                 .iter()

@@ -77,7 +77,7 @@ fn main() {
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
         println!("Processing {}", filename);
         let mut out_filename =
-            std::path::PathBuf::from(value_t!(args, "OUT", String).unwrap_or(filename.to_string()));
+            std::path::PathBuf::from(value_t!(args, "OUT", String).unwrap_or_else(|_| filename.to_string()));
         out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
         let out_filename = out_filename.to_str().unwrap();
 

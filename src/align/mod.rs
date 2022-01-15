@@ -154,9 +154,7 @@ fn build_matrix(
         E[i * m_width] = NEG_INF;
     }
 
-    for j in 1..m_width {
-        H[j] = E[j];
-    }
+    H[1..m_width].clone_from_slice(&E[1..m_width]);
     for i in 1..m_height {
         H[i * m_width] = F[i * m_width];
     }

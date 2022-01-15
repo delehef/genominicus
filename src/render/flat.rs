@@ -128,7 +128,7 @@ fn draw_tree(
         .as_ref()
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or_default();
-    children.sort_by_key(|c| c.name.as_ref().map(|s| s.as_str()).unwrap_or("Z"));
+    children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
@@ -202,7 +202,7 @@ fn draw_tree(
                         y,
                         true,
                         &gene2color(&ancestral),
-                        &ancestral,
+                        ancestral,
                     )
                     .style(|s| {
                         s.stroke_width(2.)
@@ -344,11 +344,11 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
     draw_background(
-        &mut svg, &genes, depth, &t, &t[0], 10.0, 50.0, xlabels, width,
+        &mut svg, genes, depth, t, &t[0], 10.0, 50.0, xlabels, width,
     );
     let mut links = Vec::new();
     draw_tree(
-        &mut svg, &genes, &colormap, depth, &t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+        &mut svg, genes, colormap, depth, t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
     );
     draw_links(&mut svg, &links, 50.0, xlabels);
     svg.auto_fit();
