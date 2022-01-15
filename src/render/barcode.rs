@@ -118,11 +118,16 @@ pub fn draw_species_blocks(
     }
 }
 
-pub fn render(t: &Tree, species_tree_filename: &str, out_filename: &str) {
+pub fn render(
+    t: &Tree,
+    species_tree_filename: &str,
+    out_filename: &str,
+    filter_species_tree: bool,
+) {
     println!("Reading {}", &species_tree_filename);
     let species_tree = Tree::from_filename(&species_tree_filename).unwrap();
     let mut svg = SvgDrawing::new();
-    draw_species_blocks(&mut svg, &t, &species_tree, false);
+    draw_species_blocks(&mut svg, &t, &species_tree, filter_species_tree);
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();

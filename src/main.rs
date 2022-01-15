@@ -100,6 +100,7 @@ fn main() {
                     &t,
                     &value_t!(args, "species-tree", String).unwrap(),
                     &format!("{}-barcode.svg", out_filename),
+                    args.is_present("filter_species_tree"),
                 );
             }
             _ => unimplemented!(),
