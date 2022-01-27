@@ -260,13 +260,26 @@ fn draw_tree(
 
     if node.is_duplication() {
         let dcs = node.data.get("DCS").and_then(|s| s.parse::<f32>().ok());
+        let elc = node.data.get("ELC").and_then(|s| s.parse::<i32>().ok());
 
+        let pretty_dcs = dcs
+            .map(|s| format!("{:2.0}%", (s * 100.)))
+            .unwrap_or("?".to_string());
+        let pretty_elc = elc
+            .map(|elc| {
+                if elc == 0 {
+                    "".to_owned()
+                } else {
+                    format!("L:{}", elc)
+                }
+            })
+            .unwrap_or("?".to_string());
         svg.text()
             .pos(xoffset - FONT_SIZE, yoffset - FONT_SIZE)
-            .text(
-                dcs.map(|s| format!("{}%", (s * 100.) as u8))
-                    .unwrap_or("?".to_string()),
-            );
+            .text(pretty_dcs);
+        svg.text()
+            .pos(xoffset - FONT_SIZE, yoffset - 2.*FONT_SIZE)
+            .text(pretty_elc);
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
@@ -343,9 +356,7 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
     let xlabels = 0.85 * (10. + depth + longest_name + 50.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
-    draw_background(
-        &mut svg, genes, depth, t, &t[0], 10.0, 50.0, xlabels, width,
-    );
+    draw_background(&mut svg, genes, depth, t, &t[0], 10.0, 50.0, xlabels, width);
     let mut links = Vec::new();
     draw_tree(
         &mut svg, genes, colormap, depth, t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
