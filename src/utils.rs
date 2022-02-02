@@ -9,7 +9,7 @@ use std::iter::FromIterator;
 use svarog::*;
 
 const ANCESTRAL_QUERY: &str = concat!(
-    "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where gene=?",
+    "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where protein=?",
 );
 const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
 const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
