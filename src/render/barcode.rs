@@ -40,9 +40,11 @@ pub fn draw_species_blocks(
                 .map(|n| species_name(t, *n))
                 .collect::<HashSet<_>>();
             let dcs = n.data["DCS"].parse::<f32>().unwrap();
-            let elc = n.data["ELC"].parse::<i32>().unwrap();
+            let elc_all = n.data["ELC"].parse::<i32>().unwrap();
+            let elc_all = n.data["ELC"].parse::<i32>().unwrap();
+            let elc_large = n.data["ELCL"].parse::<i32>().unwrap();
 
-            (lefts, rights, dcs, elc)
+            (lefts, rights, dcs, elc_all, elc_large)
         })
         .collect::<Vec<_>>();
     duplication_sets.sort_by(|a, b| (b.0.len() + b.1.len()).cmp(&(a.0.len() + a.1.len())));
@@ -75,7 +77,8 @@ pub fn draw_species_blocks(
         let lefts = &d.0;
         let rights = &d.1;
         let dcs = d.2;
-        let elc = d.3;
+        let elc_all = d.3;
+        let elc_large = d.4;
         let c = StyleColor::Percent(1. - dcs, dcs, 0.);
 
         let left_min = lefts
@@ -122,7 +125,10 @@ pub fn draw_species_blocks(
             .text(format!("DCS:{:.1}%", 100.*dcs));
         svg.text()
             .pos(xoffset + 2.*K, y_min+K)
-            .text(format!("ELC:{}", elc));
+            .text(format!("ELC:{}", elc_all));
+        svg.text()
+            .pos(xoffset + 2.*K, y_min+2.*K)
+            .text(format!("ELC:{}", elc_large));
 
         xoffset += 2. * K + 10.;
     }
