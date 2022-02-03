@@ -134,7 +134,6 @@ pub fn render(
     out_filename: &str,
     filter_species_tree: bool,
 ) {
-    println!("Reading {}", species_tree_filename);
     let species_tree = Tree::from_filename(species_tree_filename).unwrap();
     let mut svg = SvgDrawing::new();
     draw_species_blocks(&mut svg, t, &species_tree, filter_species_tree);

@@ -75,7 +75,7 @@ fn main() {
         Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
 
     for filename in values_t!(args, "FILE", String).unwrap().iter() {
-        println!("Processing {}", filename);
+        println!("Processing {}/{}", filename, graph_type);
         let mut out_filename =
             std::path::PathBuf::from(value_t!(args, "OUT", String).unwrap_or_else(|_| filename.to_string()));
         out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
