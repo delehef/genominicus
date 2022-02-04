@@ -64,6 +64,15 @@ pub fn draw_species_blocks(
     let longest_species =
         species.iter().map(|(name, _)| name.len()).max().unwrap() as f32 * FONT_SIZE;
 
+    let mut xoffset = longest_species + 50.;
+    let x_max = xoffset + duplication_sets.len() as f32 * 3. * K;
+    for i in (0..species.len()).step_by(2) {
+        svg.polygon()
+            .from_corners((0., K*i as f32), (x_max, K*i as f32 + FONT_SIZE))
+            .style(|s| {
+                s.fill_color(StyleColor::String("#fcf7d9".into()))
+            });
+    }
     for (species, y) in species.iter() {
         svg.text()
             .pos(0., *y + FONT_SIZE)
@@ -71,7 +80,6 @@ pub fn draw_species_blocks(
             .style(|s| s.fill_color(name2color(species)));
     }
 
-    let mut xoffset = longest_species + 50.;
     for d in duplication_sets {
         let lefts = &d.0;
         let rights = &d.1;
