@@ -41,8 +41,7 @@ pub fn draw_species_blocks(
                 .collect::<HashSet<_>>();
             let dcs = n.data["DCS"].parse::<f32>().unwrap();
             let elc_all = n.data["ELC"].parse::<i32>().unwrap();
-            let elc_all = n.data["ELC"].parse::<i32>().unwrap();
-            let elc_large = n.data["ELCL"].parse::<i32>().unwrap();
+            let elc_large = n.data["ELLC"].parse::<i32>().unwrap();
 
             (lefts, rights, dcs, elc_all, elc_large)
         })
@@ -121,14 +120,14 @@ pub fn draw_species_blocks(
         }
 
         svg.text()
-            .pos(xoffset + 2.*K, y_min)
-            .text(format!("DCS:{:.1}%", 100.*dcs));
+            .pos(xoffset + 2. * K, y_min)
+            .text(format!("DCS:{:.1}%", 100. * dcs));
         svg.text()
-            .pos(xoffset + 2.*K, y_min+K)
+            .pos(xoffset + 2. * K, y_min + K)
             .text(format!("ELC:{}", elc_all));
         svg.text()
-            .pos(xoffset + 2.*K, y_min+2.*K)
-            .text(format!("ELC:{}", elc_large));
+            .pos(xoffset + 2. * K, y_min + 2. * K)
+            .text(format!("ELLC:{}", elc_large));
 
         xoffset += 2. * K + 10.;
     }
