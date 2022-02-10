@@ -23,18 +23,7 @@ fn draw_background(
         .as_ref()
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or_default();
-    children.sort_by_cached_key(|x| {
-        if let Some(DbGene { species, .. }) = x
-            .name
-            .as_ref()
-            .and_then(|name| name.split('#').next())
-            .and_then(|gene_name| genes.get(&gene_name.to_string()))
-        {
-            species.as_str()
-        } else {
-            "zzz"
-        }
-    });
+    children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
 
     for &child in children.iter() {
         let new_y = if child.is_leaf() {
