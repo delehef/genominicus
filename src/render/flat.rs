@@ -264,10 +264,10 @@ fn draw_tree(
             })
             .unwrap_or("?".to_string());
         svg.text()
-            .pos(xoffset - FONT_SIZE, yoffset - FONT_SIZE)
+            .pos(xoffset - FONT_SIZE, yoffset + FONT_SIZE)
             .text(pretty_dcs);
         svg.text()
-            .pos(xoffset - FONT_SIZE, yoffset - 2.*FONT_SIZE)
+            .pos(xoffset - FONT_SIZE, yoffset + 2. * FONT_SIZE)
             .text(pretty_elc);
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
@@ -278,6 +278,12 @@ fn draw_tree(
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
             .style(|s| s.fill_color(StyleColor::Percent(0., 0., 0.)));
     }
+    node.name.as_ref().map(|name| {
+        svg.text()
+            .pos(xoffset, yoffset - FONT_SIZE)
+            .transform(|t| t.rotate_from(-30., xoffset, yoffset-FONT_SIZE))
+            .text(name)
+    });
     y
 }
 
@@ -334,6 +340,7 @@ fn draw_links(
 }
 
 pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
+    const MARGIN_TOP: f32 = 100.0;
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
         .leaf_names()
@@ -345,12 +352,12 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
     let xlabels = 0.85 * (10. + depth + longest_name + 50.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
-    draw_background(&mut svg, genes, depth, t, &t[0], 10.0, 50.0, xlabels, width);
+    draw_background(&mut svg, genes, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width);
     let mut links = Vec::new();
     draw_tree(
-        &mut svg, genes, colormap, depth, t, &t[0], 10.0, 50.0, xlabels, width, &mut links,
+        &mut svg, genes, colormap, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width, &mut links,
     );
-    draw_links(&mut svg, &links, 50.0, xlabels);
+    draw_links(&mut svg, &links, MARGIN_TOP, xlabels);
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();
