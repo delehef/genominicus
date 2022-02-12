@@ -25,6 +25,10 @@ fn draw_background(
         .unwrap_or_default();
     children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
 
+    if children.is_empty(){
+        return y + 20.;
+    }
+
     for &child in children.iter() {
         let new_y = if child.is_leaf() {
             y + 20.
@@ -118,6 +122,10 @@ fn draw_tree(
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or_default();
     children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
+    if children.is_empty(){
+        return y + 20.;
+    }
+
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
