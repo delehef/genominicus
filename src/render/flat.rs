@@ -112,7 +112,7 @@ fn draw_tree(
     yoffset: f32,
     xlabels: f32,
     width: f32,
-    links: &mut Vec<(Vec<String>, String, Vec<String>)>,
+    links: &mut Vec<(f32, Vec<String>, String, Vec<String>)>,
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
@@ -227,11 +227,11 @@ fn draw_tree(
                             });
                         }
                     }
-                    links.push((left_tail.to_vec(), ancestral.into(), right_tail.to_vec()));
+                    links.push((y, left_tail.to_vec(), ancestral.into(), right_tail.to_vec()));
                 } else {
                     // The node was not found in the database
                     eprintln!("{} -- {} not found", name, gene_name);
-                    links.push((Vec::new(), name.into(), Vec::new()));
+                    links.push((y, Vec::new(), name.into(), Vec::new()));
                 }
                 y += 20.;
             }
@@ -297,24 +297,22 @@ fn draw_tree(
 
 fn draw_links(
     svg: &mut SvgDrawing,
-    links: &[(Vec<String>, String, Vec<String>)],
-    yoffset: f32,
+    links: &[(f32, Vec<String>, String, Vec<String>)],
     xlabels: f32,
 ) {
-    let mut y = yoffset;
     for w in links.windows(2) {
         let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
-        for (i, ancestral) in w[0].0.iter().enumerate() {
+        for (i, ancestral) in w[0].1.iter().enumerate() {
             let x1 = xbase - i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
-                w[1].0
+                w[1].1
                     .iter()
                     .enumerate()
                     .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase - j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
-                    .from_points([(x1, y + 5.), (x2, y + 20. - 5.)])
+                    .from_points([(x1, w[0].0 + 5.), (x2, w[1].0 - 5.)])
                     .style(|s| {
                         s.stroke_color(StyleColor::String("#000".into()))
                             .stroke_width(1.0)
@@ -324,17 +322,17 @@ fn draw_links(
         }
 
         let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
-        for (i, ancestral) in w[0].2.iter().enumerate() {
+        for (i, ancestral) in w[0].3.iter().enumerate() {
             let x1 = xbase + i as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
             for j in
-                w[1].2
+                w[1].3
                     .iter()
                     .enumerate()
                     .filter_map(|(j, name)| if name == ancestral { Some(j) } else { None })
             {
                 let x2 = xbase + j as f32 * (GENE_WIDTH + GENE_SPACING) + GENE_WIDTH / 2.;
                 svg.line()
-                    .from_points([(x1, y + 5.), (x2, y + 20. - 5.)])
+                    .from_points([(x1, w[0].0 + 5.), (x2, w[1].0 - 5.)])
                     .style(|s| {
                         s.stroke_color(StyleColor::String("#000".into()))
                             .stroke_width(1.0)
@@ -342,8 +340,6 @@ fn draw_links(
                     });
             }
         }
-
-        y += 20.;
     }
 }
 
@@ -365,7 +361,7 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
     draw_tree(
         &mut svg, genes, colormap, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width, &mut links,
     );
-    draw_links(&mut svg, &links, MARGIN_TOP, xlabels);
+    draw_links(&mut svg, &links, xlabels);
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();

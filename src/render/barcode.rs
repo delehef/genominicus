@@ -142,7 +142,16 @@ pub fn draw_duplications_blocks(t: &Tree, species: &HashMap<String, f32>) -> Gro
             (lefts, rights, dcs, elc_all, elc_large)
         })
         .collect::<Vec<_>>();
-    duplication_sets.sort_by(|a, b| b.0.len().max(b.1.len()).cmp(&(a.0.len().max(a.1.len()))));
+    duplication_sets.sort_by(|a, b| {
+        let a_species_ys = a.0.iter().chain(a.1.iter()).map(|s| species[s] as i32);
+        let b_species_ys = b.0.iter().chain(b.1.iter()).map(|s| species[s] as i32);
+        let a_span = a_species_ys.clone().max().unwrap() - a_species_ys.clone().min().unwrap();
+        let b_span = b_species_ys.clone().max().unwrap() - b_species_ys.clone().min().unwrap();
+        match b_span.cmp(&a_span) {
+            std::cmp::Ordering::Equal => a_species_ys.min().unwrap().cmp(&b_species_ys.min().unwrap()),
+            x => x
+        }
+    });
 
     for d in duplication_sets {
         let lefts = &d.0;
