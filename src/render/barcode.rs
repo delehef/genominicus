@@ -5,13 +5,26 @@ use std::fs::File;
 use std::io::prelude::*;
 use svarog::*;
 
-pub fn draw_species_blocks(
+const K: f32 = FONT_SIZE;
+
+pub fn draw_species_tree(
     svg: &mut SvgDrawing,
+    species_tree: &Tree,
+    filter_species_tree: bool,
+) -> f32 {
+    let longest_species =
+        species.iter().map(|(name, _)| name.len()).max().unwrap() as f32 * FONT_SIZE;
+    let mut xoffset = longest_species + 50.;
+    xoffset
+}
+
+pub fn draw_duplications_blocks(
+    svg: &mut SvgDrawing,
+    xoffset: f32,
     t: &Tree,
     species_tree: &Tree,
     filter_species_tree: bool,
 ) {
-    const K: f32 = FONT_SIZE;
     let mut duplication_sets = t
         .inners()
         .filter(|n| t[*n].is_duplication())
@@ -47,24 +60,8 @@ pub fn draw_species_blocks(
         })
         .collect::<Vec<_>>();
     duplication_sets.sort_by(|a, b| (b.0.len() + b.1.len()).cmp(&(a.0.len() + a.1.len())));
-    let species_in_tree = t
-        .leaf_names()
-        .iter()
-        .map(|(_, s)| s.as_ref().unwrap().split('#').nth(1).unwrap())
-        .collect::<HashSet<&str>>();
 
-    let species = species_tree
-        .leaf_names()
-        .iter()
-        .map(|(_, s)| s.as_ref().unwrap())
-        .filter(|s| !filter_species_tree || species_in_tree.contains(s.as_str()))
-        .enumerate()
-        .map(|(i, s)| (s.to_owned(), i as f32 * K))
-        .collect::<HashMap<_, _>>();
-    let longest_species =
-        species.iter().map(|(name, _)| name.len()).max().unwrap() as f32 * FONT_SIZE;
 
-    let mut xoffset = longest_species + 50.;
     let x_max = xoffset + duplication_sets.len() as f32 * 3. * K;
     for i in (0..species.len()).step_by(2) {
         svg.polygon()
@@ -148,8 +145,24 @@ pub fn render(
     filter_species_tree: bool,
 ) {
     let species_tree = Tree::from_filename(species_tree_filename).unwrap();
+    let species_in_tree = t
+        .leaf_names()
+        .iter()
+        .map(|(_, s)| s.as_ref().unwrap().split('#').nth(1).unwrap())
+        .collect::<HashSet<&str>>();
+
+    let present_species = species_tree
+        .leaf_names()
+        .iter()
+        .map(|(_, s)| s.as_ref().unwrap())
+        .filter(|s| !filter_species_tree || species_in_tree.contains(s.as_str()))
+        .enumerate()
+        .map(|(i, s)| (s.to_owned(), i as f32 * K))
+        .collect::<HashMap<_, _>>();
+
     let mut svg = SvgDrawing::new();
-    draw_species_blocks(&mut svg, t, &species_tree, filter_species_tree);
+    let xoffset = draw_species_tree(&mut svg, &species_tree, filter_species_tree);
+    draw_duplications_blocks(&mut svg, xoffset, t, &species_tree, filter_species_tree);
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();
