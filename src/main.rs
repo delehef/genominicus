@@ -82,17 +82,23 @@ fn main() {
         let out_filename = out_filename.to_str().unwrap();
 
         let t = Tree::from_filename(filename).unwrap();
-        let genes = make_genes_cache(&t, &mut db);
-        let colormap = if colorize_per_duplication {
-            make_colormap_per_duplication(&t, &genes, colorize_all)
-        } else {
-            make_colormap(&t, &genes)
-        };
         match graph_type.as_str() {
             "flat" => {
                 render::flat::render(&t, &genes, &colormap, &format!("{}-flat.svg", out_filename));
+                let genes = make_genes_cache(&t, &mut db);
+                let colormap = if colorize_per_duplication {
+                    make_colormap_per_duplication(&t, &genes, colorize_all)
+                } else {
+                    make_colormap(&t, &genes)
+                };
             }
             "html" => {
+                let genes = make_genes_cache(&t, &mut db);
+                let colormap = if colorize_per_duplication {
+                    make_colormap_per_duplication(&t, &genes, colorize_all)
+                } else {
+                    make_colormap(&t, &genes)
+                };
                 render::html::render(&t, &genes, &colormap, &format!("{}.html", out_filename))
             }
             "barcode" => {
