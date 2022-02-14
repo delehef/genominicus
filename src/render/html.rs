@@ -32,7 +32,8 @@ struct HtmlNode {
     color: String,
     children: Vec<HtmlNode>,
 
-    isDuplication: bool,
+    #[serde(rename="isDuplication")]
+    is_duplication: bool,
     confidence: f32,
     repr: Landscape,
     clustered: Option<Vec<PolyGene>>,
@@ -267,7 +268,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
                         .collect()
                 })
                 .unwrap_or_default(),
-            isDuplication: tree[node].is_duplication(),
+            is_duplication: tree[node].is_duplication(),
             confidence: tree[node]
                 .data
                 .get("DCS")
