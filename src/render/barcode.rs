@@ -23,10 +23,30 @@ fn draw_stripes(svg: &mut SvgDrawing, n: usize, width: f32) {
     }
 }
 
+fn draw_nodes_in_tree(
+    svg: &mut SvgDrawing,
+    nodes: &HashMap<String, Vec<f32>>,
+    species_map: &HashMap<String, (f32, f32)>,
+) {
+    for mrca in nodes.keys() {
+        let dups = &nodes[mrca];
+        let opacity = 1./dups.len() as f32;
+        let (mut x, mut y) = species_map.get(mrca).unwrap().clone();
+        for dcs in dups {
+            let c = StyleColor::Percent(1. - dcs, *dcs, 0.);
+            svg.polygon()
+                .from_pos_dims(x - 3., y - 3. + K/2., 6., 6.)
+                .style(|s| s.fill_color(c).fill_opacity(opacity));
+            x += 1.; y+= 1.;
+        }
+    }
+}
+
+// Returns (SvgGroup, map speciesname -> (coords))
 fn draw_species_tree(
     species_tree: &Tree,
     present_species: &[String],
-) -> (Group, HashMap<String, f32>) {
+) -> (Group, HashMap<String, (f32, f32)>) {
     fn render_node(
         svg: &mut Group,
         x: f32,
@@ -35,7 +55,7 @@ fn draw_species_tree(
         t: &Tree,
         n: usize,
         present_species: &[String],
-        species_map: &mut HashMap<String, f32>,
+        species_map: &mut HashMap<String, (f32, f32)>,
     ) -> f32 {
         let mut y = y;
         if t[n].is_leaf() {
@@ -48,11 +68,15 @@ fn draw_species_tree(
                     .pos(xlabels + K, y + FONT_SIZE)
                     .text(name)
                     .style(|s| s.fill_color(name2color(name)));
-                species_map.insert(name.to_owned(), y)
+                species_map.insert(name.to_owned(), (xlabels, y))
             });
             y += K;
         } else {
             let old_y = y;
+
+            if let Some(name) = &t[n].name {
+                species_map.insert(name.to_owned(), (x, y));
+            }
             for (i, c) in t.children(n).iter().enumerate() {
                 if t.leaves_of(*c).iter().any(|l| {
                     t[*l]
@@ -83,7 +107,7 @@ fn draw_species_tree(
         y
     }
 
-    let mut species_map = HashMap::<String, f32>::new();
+    let mut species_map = HashMap::<String, (f32, f32)>::new();
     let mut out = Group::new();
     render_node(
         &mut out,
@@ -95,21 +119,16 @@ fn draw_species_tree(
         present_species,
         &mut species_map,
     );
-    (
-        out,
-        present_species
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (s.to_owned(), i as f32 * K))
-            .collect::<HashMap<_, _>>(),
-    )
+    (out, species_map)
 }
 
 pub fn draw_duplications_blocks(
     t: &Tree,
-    species: &HashMap<String, f32>,
+    species_tree: &Tree,
+    species_map: &mut HashMap<String, (f32, f32)>,
     render: &RenderSettings,
-) -> Group {
+    my_offset: f32,
+) -> (Group, HashMap<String, Vec<f32>>) {
     let mut out = Group::new();
     let mut xoffset = 0.;
     let mut duplication_sets = t
@@ -142,13 +161,30 @@ pub fn draw_duplications_blocks(
             let dcs = n.data["DCS"].parse::<f32>().unwrap();
             let elc_all = n.data["ELC"].parse::<i32>().unwrap();
             let elc_large = n.data["ELLC"].parse::<i32>().unwrap();
+            let all_species = lefts
+                .iter()
+                .chain(rights.iter())
+                .filter_map(|name| {
+                    species_tree
+                        .find_leaf(|n| n.name.as_ref().map(|n| *n == *name).unwrap_or(false))
+                })
+                .collect::<Vec<_>>();
+            let mrca = species_tree
+                .mrca(&all_species)
+                .and_then(|n| species_tree[n].name.as_ref());
 
-            (lefts, rights, dcs, elc_all, elc_large)
+            (lefts, rights, dcs, elc_all, elc_large, mrca)
         })
         .collect::<Vec<_>>();
     duplication_sets.sort_by(|a, b| {
-        let a_species_ys = a.0.iter().chain(a.1.iter()).map(|s| species[s] as i32);
-        let b_species_ys = b.0.iter().chain(b.1.iter()).map(|s| species[s] as i32);
+        let a_species_ys =
+            a.0.iter()
+                .chain(a.1.iter())
+                .map(|s| species_map[s].1 as i32);
+        let b_species_ys =
+            b.0.iter()
+                .chain(b.1.iter())
+                .map(|s| species_map[s].1 as i32);
         let a_span = a_species_ys.clone().max().unwrap() - a_species_ys.clone().min().unwrap();
         let b_span = b_species_ys.clone().max().unwrap() - b_species_ys.clone().min().unwrap();
         match b_span.cmp(&a_span) {
@@ -160,6 +196,7 @@ pub fn draw_duplications_blocks(
         }
     });
 
+    let mut dup_nodes: HashMap<String, Vec<f32>> = HashMap::new();
     for d in duplication_sets {
         let lefts = &d.0;
         let rights = &d.1;
@@ -167,22 +204,25 @@ pub fn draw_duplications_blocks(
         let elc_all = d.3;
         let elc_large = d.4;
         let c = StyleColor::Percent(1. - dcs, dcs, 0.);
+        if let Some(mrca) = d.5 {
+            dup_nodes.entry(mrca.clone()).or_insert(vec![]).push(dcs);
+        }
 
         let left_min = lefts
             .iter()
-            .map(|s| *species.get(s).unwrap())
+            .map(|s| species_map.get(s).unwrap().1)
             .fold(f32::INFINITY, f32::min);
         let left_max = lefts
             .iter()
-            .map(|s| *species.get(s).unwrap())
+            .map(|s| species_map.get(s).unwrap().1)
             .fold(f32::NEG_INFINITY, f32::max);
         let right_min = rights
             .iter()
-            .map(|s| *species.get(s).unwrap())
+            .map(|s| species_map.get(s).unwrap().1)
             .fold(f32::INFINITY, f32::min);
         let right_max = rights
             .iter()
-            .map(|s| *species.get(s).unwrap())
+            .map(|s| species_map.get(s).unwrap().1)
             .fold(f32::NEG_INFINITY, f32::max);
         let y_min = left_min.min(right_min);
         let y_max = left_max.max(right_max);
@@ -194,14 +234,14 @@ pub fn draw_duplications_blocks(
             });
 
         for s in lefts.iter() {
-            let y = *species.get(s).unwrap();
+            let y = species_map.get(s).unwrap().1;
             out.polygon()
                 .from_pos_dims(xoffset, y, K, K)
                 .style(|s| s.fill_color(c.clone()));
         }
 
         for s in rights.iter() {
-            let y = *species.get(s).unwrap();
+            let y = species_map.get(s).unwrap().1;
             out.polygon()
                 .from_pos_dims(xoffset + K, y, K, K)
                 .style(|s| s.fill_color(c.clone()));
@@ -232,7 +272,7 @@ pub fn draw_duplications_blocks(
 
         xoffset += 2. * K + 10.;
     }
-    out
+    (out, dup_nodes)
 }
 
 pub fn render(
@@ -256,12 +296,19 @@ pub fn render(
         .filter(|s| !filter_species_tree || species_in_tree.contains(s.as_str()))
         .collect::<Vec<_>>();
 
-    let (tree_group, present_species_map) = draw_species_tree(&species_tree, &present_species);
-    let mut dups_group = draw_duplications_blocks(t, &present_species_map, render);
+    let (tree_group, mut present_species_map) = draw_species_tree(&species_tree, &present_species);
+    let (mut dups_group, dups_nodes) = draw_duplications_blocks(
+        t,
+        &species_tree,
+        &mut present_species_map,
+        render,
+        tree_group.bbox().x2,
+    );
     dups_group.shift(tree_group.bbox().x2, 0.);
     draw_stripes(&mut svg, present_species.len(), dups_group.bbox().x2);
     svg.push(Box::new(tree_group));
     svg.push(Box::new(dups_group));
+    draw_nodes_in_tree(&mut svg, &dups_nodes, &present_species_map);
 
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
