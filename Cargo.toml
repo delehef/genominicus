@@ -13,7 +13,7 @@ svarog = { path = "../svarog" }
 newick = { git = "https://github.com/delehef/newick.git" }
 md5 = "0.7"
 rusqlite = "0.25"
-clap = "2"
+clap = { version="3", features=["cargo"] }
 colorsys = "0.6"
 palette = "0.6"
 petgraph = "0.6"

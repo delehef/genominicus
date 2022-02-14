@@ -5,6 +5,8 @@ use crate::utils::*;
 use newick::*;
 use svarog::*;
 
+const MARGIN_TOP: f32 = 100.0;
+
 fn draw_background(
     svg: &mut SvgDrawing,
     genes: &GeneCache,
@@ -25,7 +27,7 @@ fn draw_background(
         .unwrap_or_default();
     children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
 
-    if children.is_empty(){
+    if children.is_empty() {
         return y + 20.;
     }
 
@@ -113,6 +115,7 @@ fn draw_tree(
     xlabels: f32,
     width: f32,
     links: &mut Vec<(f32, Vec<String>, String, Vec<String>)>,
+    render: &RenderSettings,
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
@@ -122,7 +125,7 @@ fn draw_tree(
         .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
         .unwrap_or_default();
     children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
-    if children.is_empty(){
+    if children.is_empty() {
         return y + 20.;
     }
 
@@ -251,6 +254,7 @@ fn draw_tree(
                 xlabels,
                 width,
                 links,
+                render,
             );
         }
     }
@@ -258,6 +262,7 @@ fn draw_tree(
     if node.is_duplication() {
         let dcs = node.data.get("DCS").and_then(|s| s.parse::<f32>().ok());
         let elc = node.data.get("ELC").and_then(|s| s.parse::<i32>().ok());
+        let ellc = node.data.get("ELLC").and_then(|s| s.parse::<i32>().ok());
 
         let pretty_dcs = dcs
             .map(|s| format!("{:2.0}%", (s * 100.)))
@@ -271,12 +276,44 @@ fn draw_tree(
                 }
             })
             .unwrap_or("?".to_string());
-        svg.text()
-            .pos(xoffset - FONT_SIZE, yoffset + FONT_SIZE)
-            .text(pretty_dcs);
-        svg.text()
-            .pos(xoffset - FONT_SIZE, yoffset + 2. * FONT_SIZE)
-            .text(pretty_elc);
+        let pretty_ellc = ellc
+            .map(|ellc| {
+                if ellc == 0 {
+                    "".to_owned()
+                } else {
+                    format!("L:{}", ellc)
+                }
+            })
+            .unwrap_or("?".to_string());
+
+        let mut label_offset = 0.;
+        if render.cs {
+            svg.text()
+                .pos(
+                    xoffset - FONT_SIZE,
+                    yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
+                )
+                .text(pretty_dcs);
+            label_offset += 1.;
+        }
+        if render.elc {
+            svg.text()
+                .pos(
+                    xoffset - FONT_SIZE,
+                    yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
+                )
+                .text(pretty_elc);
+            label_offset += 1.;
+        }
+        if render.ellc {
+            svg.text()
+                .pos(
+                    xoffset - FONT_SIZE,
+                    yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
+                )
+                .text(pretty_ellc);
+            label_offset += 1.;
+        }
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
@@ -286,12 +323,14 @@ fn draw_tree(
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
             .style(|s| s.fill_color(StyleColor::Percent(0., 0., 0.)));
     }
-    node.name.as_ref().map(|name| {
-        svg.text()
-            .pos(xoffset, yoffset - FONT_SIZE)
-            .transform(|t| t.rotate_from(-30., xoffset, yoffset-FONT_SIZE))
-            .text(name)
-    });
+    if render.inner_nodes {
+        node.name.as_ref().map(|name| {
+            svg.text()
+                .pos(xoffset, yoffset - FONT_SIZE)
+                .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
+                .text(name)
+        });
+    }
     y
 }
 
@@ -343,8 +382,13 @@ fn draw_links(
     }
 }
 
-pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
-    const MARGIN_TOP: f32 = 100.0;
+pub fn render(
+    t: &Tree,
+    genes: &GeneCache,
+    colormap: &ColorMap,
+    out_filename: &str,
+    render: &RenderSettings,
+) {
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
         .leaf_names()
@@ -353,15 +397,20 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
         .max()
         .unwrap() as f32
         * FONT_SIZE;
-    let xlabels = 0.85 * (10. + depth + longest_name + 50.);
+    let xlabels = 0.85 * (10. + depth + longest_name + 20.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
-    draw_background(&mut svg, genes, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width);
+    draw_background(
+        &mut svg, genes, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width,
+    );
     let mut links = Vec::new();
     draw_tree(
         &mut svg, genes, colormap, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width, &mut links,
+        render,
     );
-    draw_links(&mut svg, &links, xlabels);
+    if render.links {
+        draw_links(&mut svg, &links, xlabels);
+    }
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();

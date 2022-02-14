@@ -24,6 +24,26 @@ pub const MARKER: &str = "=======FINAL=======";
 pub const INDEL: &str = "-";
 pub const EMPTY: &str = "";
 
+#[derive(Debug)]
+pub struct RenderSettings {
+    pub inner_nodes: bool,
+    pub cs: bool,
+    pub elc: bool,
+    pub ellc: bool,
+    pub links: bool,
+}
+impl Default for RenderSettings {
+    fn default() -> Self {
+        RenderSettings {
+            inner_nodes: false,
+            cs: false,
+            elc: false,
+            ellc: false,
+            links: false,
+        }
+    }
+}
+
 pub struct DbGene {
     pub ancestral: String,
     pub species: String,

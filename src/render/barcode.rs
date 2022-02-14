@@ -105,7 +105,11 @@ fn draw_species_tree(
     )
 }
 
-pub fn draw_duplications_blocks(t: &Tree, species: &HashMap<String, f32>) -> Group {
+pub fn draw_duplications_blocks(
+    t: &Tree,
+    species: &HashMap<String, f32>,
+    render: &RenderSettings,
+) -> Group {
     let mut out = Group::new();
     let mut xoffset = 0.;
     let mut duplication_sets = t
@@ -148,8 +152,11 @@ pub fn draw_duplications_blocks(t: &Tree, species: &HashMap<String, f32>) -> Gro
         let a_span = a_species_ys.clone().max().unwrap() - a_species_ys.clone().min().unwrap();
         let b_span = b_species_ys.clone().max().unwrap() - b_species_ys.clone().min().unwrap();
         match b_span.cmp(&a_span) {
-            std::cmp::Ordering::Equal => a_species_ys.min().unwrap().cmp(&b_species_ys.min().unwrap()),
-            x => x
+            std::cmp::Ordering::Equal => a_species_ys
+                .min()
+                .unwrap()
+                .cmp(&b_species_ys.min().unwrap()),
+            x => x,
         }
     });
 
@@ -200,18 +207,28 @@ pub fn draw_duplications_blocks(t: &Tree, species: &HashMap<String, f32>) -> Gro
                 .style(|s| s.fill_color(c.clone()));
         }
 
-        out.text()
-            .pos(xoffset, y_min)
-            .text(format!("DCS:{:.1}%", 100. * dcs))
-            .transform(|t| t.rotate_from(-45., xoffset, y_min));
-        out.text()
-            .pos(xoffset + 1.2 * K, y_min)
-            .text(format!("ELC:{}", elc_all))
-            .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
-        out.text()
-            .pos(xoffset + 2.4 * K, y_min)
-            .text(format!("ELLC:{}", elc_large))
-            .transform(|t| t.rotate_from(-45., xoffset + 2.4 * K, y_min));
+        let mut label_offset = 0.;
+        if render.cs {
+            out.text()
+                .pos(xoffset + 1.1 * label_offset * K, y_min)
+                .text(format!("DCS:{:.1}%", 100. * dcs))
+                .transform(|t| t.rotate_from(-45., xoffset, y_min));
+            label_offset += 1.;
+        }
+        if render.elc {
+            out.text()
+                .pos(xoffset + 1.1 * label_offset * K, y_min)
+                .text(format!("ELC:{}", elc_all))
+                .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
+            label_offset += 1.;
+        }
+        if render.ellc {
+            out.text()
+                .pos(xoffset + 1.1 * label_offset * K, y_min)
+                .text(format!("ELLC:{}", elc_large))
+                .transform(|t| t.rotate_from(-45., xoffset + 2.4 * K, y_min));
+            label_offset += 1.;
+        }
 
         xoffset += 2. * K + 10.;
     }
@@ -223,6 +240,7 @@ pub fn render(
     species_tree_filename: &str,
     out_filename: &str,
     filter_species_tree: bool,
+    render: &RenderSettings,
 ) {
     let mut svg = SvgDrawing::new();
     let species_tree = Tree::from_filename(species_tree_filename).unwrap();
@@ -239,7 +257,7 @@ pub fn render(
         .collect::<Vec<_>>();
 
     let (tree_group, present_species_map) = draw_species_tree(&species_tree, &present_species);
-    let mut dups_group = draw_duplications_blocks(t, &present_species_map);
+    let mut dups_group = draw_duplications_blocks(t, &present_species_map, render);
     dups_group.shift(tree_group.bbox().x2, 0.);
     draw_stripes(&mut svg, present_species.len(), dups_group.bbox().x2);
     svg.push(Box::new(tree_group));
