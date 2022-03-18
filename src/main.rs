@@ -35,7 +35,6 @@ fn main() {
                 .help("The database to use")
                 .required_if_eq_any(&[("type", "barcode"), ("type", "html")])
                 .takes_value(true)
-                .required(true),
         )
         .arg(
             Arg::new("FILE")
@@ -74,7 +73,6 @@ fn main() {
         )
         .get_matches();
 
-    let db_filename = args.value_of("database").unwrap();
     let graph_type = args.value_of("type").unwrap();
     let colorize_per_duplication = args.is_present("colorize_per_duplication");
     let colorize_all = args.is_present("colorize_all");
@@ -88,13 +86,11 @@ fn main() {
                 "elc" => render_settings.elc = true,
                 "ellc" => render_settings.ellc = true,
                 "inner-nodes" => render_settings.inner_nodes = true,
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
     };
 
-    let mut db =
-        Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
 
     for filename in args.values_of_t::<String>("FILE").unwrap().iter() {
         println!("Processing {}/{}", filename, graph_type);
@@ -107,6 +103,9 @@ fn main() {
         let t = Tree::from_filename(filename).unwrap();
         match graph_type {
             "flat" => {
+                let db_filename = args.value_of("database").unwrap();
+                let mut db =
+                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
                 let genes = make_genes_cache(&t, &mut db);
                 let colormap = if colorize_per_duplication {
                     make_colormap_per_duplication(&t, &genes, colorize_all)
@@ -122,6 +121,9 @@ fn main() {
                 );
             }
             "html" => {
+                let db_filename = args.value_of("database").unwrap();
+                let mut db =
+                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
                 let genes = make_genes_cache(&t, &mut db);
                 let colormap = if colorize_per_duplication {
                     make_colormap_per_duplication(&t, &genes, colorize_all)
