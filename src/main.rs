@@ -16,7 +16,7 @@ fn main() {
                 .help("The graph type to use")
                 .short('T')
                 .long("type")
-                .possible_values(&["flat", "html", "barcode"])
+                .possible_values(&["flat", "html", "barcode", "skeleton"])
                 .default_value("flat")
                 .takes_value(true),
         )
@@ -138,6 +138,13 @@ fn main() {
                     args.value_of("species-tree").unwrap(),
                     &format!("{}-barcode.svg", out_filename),
                     args.is_present("filter_species_tree"),
+                    &render_settings,
+                );
+            }
+            "skeleton" => {
+                render::skeleton::render(
+                    &t,
+                    &format!("{}-skeleton.svg", out_filename),
                     &render_settings,
                 );
             }
