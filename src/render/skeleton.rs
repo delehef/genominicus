@@ -5,6 +5,8 @@ use crate::utils::*;
 use newick::*;
 use svarog::*;
 
+const STEP_FORWARD: f32 = 20.;
+
 fn draw_tree(
     svg: &mut SvgDrawing,
     t: &Tree,
@@ -16,36 +18,39 @@ fn draw_tree(
     let mut y = yoffset;
     let leaves_count = t.leaves_of(n).len() as f32;
     let size = 10. * leaves_count.log10();
+    let step_forward = STEP_FORWARD + if t[n].is_duplication() { size } else { 0. };
 
-    if t.descendants(n).iter().any(|d| t[*d].is_duplication()) {
+    if t.descendants(n).iter().any(|d| t[*d].is_duplication()) || t[n].is_duplication() {
         if let Some(ref cs) = t[n].children {
             for c in cs {
-                let thickness = 2.*t.leaves_of(*c).len() as f32;
+                let thickness = (t.leaves_of(*c).len() as f32).sqrt();
+                let leaves_count = t.leaves_of(*c).len() as f32;
 
-                if t.descendants(*c).iter().any(|d| t[*d].is_duplication()) {
+                if t.descendants(*c).iter().any(|d| t[*d].is_duplication())
+                    || t[*c].is_duplication()
+                {
                     svg.line()
                         .from_coords(xoffset, yoffset, xoffset, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(1.0));
+                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
                     svg.line()
-                        .from_coords(xoffset, y, xoffset + 2. * size, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(1.0));
-                    y = draw_tree(svg, t, *c, xoffset + 2. * size, y, render);
-                    // y += 20.;
+                        .from_coords(xoffset, y, xoffset + step_forward, y)
+                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
+                    y = draw_tree(svg, t, *c, xoffset + step_forward, y, render);
                 } else if t[n].is_duplication() {
                     svg.line()
                         .from_coords(xoffset, yoffset, xoffset, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(1.0));
+                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
                     svg.line()
-                        .from_coords(xoffset, y, xoffset + 2.*size, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(1.0));
+                        .from_coords(xoffset, y, xoffset + step_forward, y)
+                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
                     svg.polygon()
                         .from_coords([
-                            (xoffset + 2. * size, y),
-                            (xoffset + 2. * size + thickness, y - thickness / 2.),
-                            (xoffset + 2. * size + thickness, y + thickness / 2.),
+                            (xoffset + step_forward, y),
+                            (xoffset + step_forward + leaves_count, y),
+                            (xoffset + step_forward + leaves_count, y + leaves_count),
                         ])
                         .style(|s| s);
-                    y += 5. + thickness;
+                    y += 5. + leaves_count;
                 }
             }
         }
@@ -53,10 +58,11 @@ fn draw_tree(
         svg.polygon()
             .from_coords([
                 (xoffset + 2. * size, y),
-                (xoffset + 2. * size + leaves_count, y - leaves_count / 2. - 1.),
-                (xoffset + 2. * size + leaves_count, y + leaves_count / 2. + 1.),
+                (xoffset + 2. * size + leaves_count, y),
+                (xoffset + 2. * size + leaves_count, y + leaves_count),
             ])
             .style(|s| s);
+        y += leaves_count;
     }
 
     if t[n].is_duplication() {
@@ -118,8 +124,18 @@ fn draw_tree(
         svg.polygon()
             .from_pos_dims(xoffset - size / 2., yoffset - size / 2., size, size)
             .style(|s| s.fill_color(StyleColor::Percent(1.0 - dcs, dcs, 0.)));
+        if render.inner_nodes {
+            t[n].name.as_ref().map(|name| {
+                svg.text()
+                    .pos(xoffset, yoffset - FONT_SIZE)
+                    .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
+                    .text(name)
+            });
+        }
+        y + size
+    } else {
+        y + 5.
     }
-    y + 5.
 }
 
 pub fn render(t: &Tree, out_filename: &str, render: &RenderSettings) {
