@@ -1,4 +1,5 @@
 use clap::*;
+use colored::Colorize;
 use newick::*;
 use rusqlite::*;
 use utils::*;
@@ -34,7 +35,7 @@ fn main() {
                 .long("database")
                 .help("The database to use")
                 .required_if_eq_any(&[("type", "barcode"), ("type", "html")])
-                .takes_value(true)
+                .takes_value(true),
         )
         .arg(
             Arg::new("FILE")
@@ -91,9 +92,8 @@ fn main() {
         }
     };
 
-
     for filename in args.values_of_t::<String>("FILE").unwrap().iter() {
-        println!("Processing {}/{}", filename, graph_type);
+        println!("Rendering {} as {}", filename.bold().magenta(), graph_type.bold().yellow());
         let mut out_filename = std::path::PathBuf::from(
             args.value_of_t("OUT")
                 .unwrap_or_else(|_| filename.to_string()),
@@ -105,7 +105,8 @@ fn main() {
             "flat" => {
                 let db_filename = args.value_of("database").unwrap();
                 let mut db =
-                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                        .unwrap();
                 let genes = make_genes_cache(&t, &mut db);
                 let colormap = if colorize_per_duplication {
                     make_colormap_per_duplication(&t, &genes, colorize_all)
@@ -123,7 +124,8 @@ fn main() {
             "html" => {
                 let db_filename = args.value_of("database").unwrap();
                 let mut db =
-                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                        .unwrap();
                 let genes = make_genes_cache(&t, &mut db);
                 let colormap = if colorize_per_duplication {
                     make_colormap_per_duplication(&t, &genes, colorize_all)
