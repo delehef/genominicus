@@ -14,9 +14,9 @@ fn draw_stripes(svg: &mut SvgDrawing, n: usize, width: f32) {
                 .from_corners((0., K * i as f32), (width, K * i as f32 + FONT_SIZE))
                 .style(|s| {
                     s.fill_color(if i % 4 == 1 {
-                        StyleColor::String("#fcf7d9".into())
+                        Some(StyleColor::String("#fcf7d9".into()))
                     } else {
-                        StyleColor::String("#e5f8f9".into())
+                        Some(StyleColor::String("#e5f8f9".into()))
                     })
                 });
         }
@@ -36,7 +36,7 @@ fn draw_nodes_in_tree(
             let c = StyleColor::Percent(1. - dcs, *dcs, 0.);
             svg.polygon()
                 .from_pos_dims(x - 3., y - 3. + K/2., 6., 6.)
-                .style(|s| s.fill_color(c).fill_opacity(opacity));
+                .style(|s| s.fill_color(Some(c)).fill_opacity(opacity));
             x += 1.; y+= 1.;
         }
     }
@@ -67,7 +67,7 @@ fn draw_species_tree(
                 svg.text()
                     .pos(xlabels + K, y + FONT_SIZE)
                     .text(name)
-                    .style(|s| s.fill_color(name2color(name)));
+                    .style(|s| s.fill_color(Some(name2color(name))));
                 species_map.insert(name.to_owned(), (xlabels, y))
             });
             y += K;
@@ -229,7 +229,7 @@ pub fn draw_duplications_blocks(
         out.polygon()
             .from_corners((xoffset, y_min), (xoffset + 2. * K, y_max + K))
             .style(|s| {
-                s.fill_color(c.clone());
+                s.fill_color(Some(c.clone()));
                 s.fill_opacity(0.3)
             });
 
@@ -237,14 +237,14 @@ pub fn draw_duplications_blocks(
             let y = species_map.get(s).unwrap().1;
             out.polygon()
                 .from_pos_dims(xoffset, y, K, K)
-                .style(|s| s.fill_color(c.clone()));
+                .style(|s| s.fill_color(Some(c.clone())));
         }
 
         for s in rights.iter() {
             let y = species_map.get(s).unwrap().1;
             out.polygon()
                 .from_pos_dims(xoffset + K, y, K, K)
-                .style(|s| s.fill_color(c.clone()));
+                .style(|s| s.fill_color(Some(c.clone())));
         }
 
         let mut label_offset = 0.;

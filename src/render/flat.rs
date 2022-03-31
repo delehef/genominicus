@@ -58,7 +58,7 @@ fn draw_background(
                     new_y - y - 6.,
                 )
                 .style(|s| {
-                    s.fill_color(StyleColor::Percent(0.5, 0.5, 1.))
+                    s.fill_color(Some(StyleColor::Percent(0.5, 0.5, 1.)))
                         .fill_opacity(0.1 + 0.9 * d)
                 });
         }
@@ -83,7 +83,7 @@ fn draw_gene<'a>(
             .add_point(x, y + 5.)
             .set_hover(name)
             .style(|s| {
-                s.fill_color(color.clone())
+                s.fill_color(Some(color.clone()))
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             })
@@ -96,7 +96,7 @@ fn draw_gene<'a>(
             .add_point(x + 3., y + 5.)
             .set_hover(name)
             .style(|s| {
-                s.fill_color(color.clone())
+                s.fill_color(Some(color.clone()))
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             })
@@ -171,7 +171,7 @@ fn draw_tree(
                     svg.text()
                         .pos(depth, y + 5.)
                         .text(format!("{} {}/{}", gene_name, species, chr))
-                        .style(|s| s.fill_color(name2color(species)));
+                        .style(|s| s.fill_color(Some(name2color(species))));
 
                     // Left tail
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
@@ -317,11 +317,11 @@ fn draw_tree(
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
-            .style(|s| s.fill_color(StyleColor::Percent(1.0 - dcs, dcs, 0.)));
+            .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
     } else if !node.is_leaf() {
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
-            .style(|s| s.fill_color(StyleColor::Percent(0., 0., 0.)));
+            .style(|s| s.fill_color(Some(StyleColor::Percent(0., 0., 0.))));
     }
     if render.inner_nodes {
         node.name.as_ref().map(|name| {

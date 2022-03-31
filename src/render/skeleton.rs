@@ -30,19 +30,29 @@ fn draw_tree(
                     || t[*c].is_duplication()
                 {
                     svg.line()
-                        .from_coords(xoffset, yoffset, xoffset, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
-                    svg.line()
-                        .from_coords(xoffset, y, xoffset + step_forward, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
+                        .from_points([
+                            (xoffset, yoffset),
+                            (xoffset, y),
+                            (xoffset + step_forward, y),
+                        ])
+                        .style(|s| {
+                            s.stroke_color(StyleColor::RGB(0, 0, 0))
+                                .stroke_width(thickness)
+                                .fill_color(None)
+                        });
                     y = draw_tree(svg, t, *c, xoffset + step_forward, y, render);
                 } else if t[n].is_duplication() {
                     svg.line()
-                        .from_coords(xoffset, yoffset, xoffset, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
-                    svg.line()
-                        .from_coords(xoffset, y, xoffset + step_forward, y)
-                        .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(thickness));
+                        .from_points([
+                            (xoffset, yoffset),
+                            (xoffset, y),
+                            (xoffset + step_forward, y),
+                        ])
+                        .style(|s| {
+                            s.stroke_color(StyleColor::RGB(0, 0, 0))
+                                .stroke_width(thickness)
+                                .fill_color(None)
+                        });
                     svg.polygon()
                         .from_coords([
                             (xoffset + step_forward, y),
@@ -123,7 +133,7 @@ fn draw_tree(
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - size / 2., yoffset - size / 2., size, size)
-            .style(|s| s.fill_color(StyleColor::Percent(1.0 - dcs, dcs, 0.)));
+            .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
         if render.inner_nodes {
             t[n].name.as_ref().map(|name| {
                 svg.text()
