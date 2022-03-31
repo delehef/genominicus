@@ -11,8 +11,8 @@ fn draw_background(
     svg: &mut SvgDrawing,
     genes: &GeneCache,
     depth: f32,
-    tree: &Tree,
-    node: &Node,
+    tree: &NewickTree,
+    node: usize,
     xoffset: f32,
     yoffset: f32,
     xlabels: f32,
@@ -20,19 +20,15 @@ fn draw_background(
 ) -> f32 {
     let mut y = yoffset;
 
-    let mut children = node
-        .children
-        .as_ref()
-        .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
-        .unwrap_or_default();
-    children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
+    let mut children = tree.children(node).to_vec();
+    children.sort_by_key(|c| tree[*c].data.name.as_deref().unwrap_or("Z"));
 
     if children.is_empty() {
         return y + 20.;
     }
 
     for &child in children.iter() {
-        let new_y = if child.is_leaf() {
+        let new_y = if tree[child].is_leaf() {
             y + 20.
         } else {
             draw_background(
@@ -48,7 +44,7 @@ fn draw_background(
             )
         };
 
-        if node.is_duplication() {
+        if tree.is_duplication(node) {
             let d = xoffset / depth;
             svg.polygon()
                 .from_pos_dims(
@@ -108,8 +104,8 @@ fn draw_tree(
     genes: &GeneCache,
     colormap: &ColorMap,
     depth: f32,
-    tree: &Tree,
-    node: &Node,
+    tree: &NewickTree,
+    n: usize,
     xoffset: f32,
     yoffset: f32,
     xlabels: f32,
@@ -119,12 +115,8 @@ fn draw_tree(
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
-    let mut children = node
-        .children
-        .as_ref()
-        .map(|children| children.iter().map(|i| &tree[*i]).collect::<Vec<_>>())
-        .unwrap_or_default();
-    children.sort_by_key(|c| c.name.as_deref().unwrap_or("Z"));
+    let mut children = tree[n].children().to_vec();
+    children.sort_by_key(|c| tree[*c].data.name.as_deref().unwrap_or("Z"));
     if children.is_empty() {
         return y + 20.;
     }
@@ -137,7 +129,7 @@ fn draw_tree(
         }
         old_y = y;
 
-        if child.is_leaf() {
+        if tree[*child].is_leaf() {
             // Leaf branch
             svg.line()
                 .from_coords(xoffset, y, depth, y)
@@ -156,7 +148,7 @@ fn draw_tree(
                 ])
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
-            if let Some(name) = &child.name {
+            if let Some(name) = tree[*child].data.name.as_ref() {
                 let gene_name = name.split('#').next().unwrap();
                 if let Some(DbGene {
                     ancestral,
@@ -248,7 +240,7 @@ fn draw_tree(
                 colormap,
                 depth,
                 tree,
-                child,
+                *child,
                 xoffset + BRANCH_WIDTH,
                 y,
                 xlabels,
@@ -259,10 +251,22 @@ fn draw_tree(
         }
     }
 
-    if node.is_duplication() {
-        let dcs = node.data.get("DCS").and_then(|s| s.parse::<f32>().ok());
-        let elc = node.data.get("ELC").and_then(|s| s.parse::<i32>().ok());
-        let ellc = node.data.get("ELLC").and_then(|s| s.parse::<i32>().ok());
+    if tree.is_duplication(n) {
+        let dcs = tree[n]
+            .data
+            .attrs
+            .get("DCS")
+            .and_then(|s| s.parse::<f32>().ok());
+        let elc = tree[n]
+            .data
+            .attrs
+            .get("ELC")
+            .and_then(|s| s.parse::<i32>().ok());
+        let ellc = tree[n]
+            .data
+            .attrs
+            .get("ELLC")
+            .and_then(|s| s.parse::<i32>().ok());
 
         let pretty_dcs = dcs
             .map(|s| format!("{:2.0}%", (s * 100.)))
@@ -318,13 +322,13 @@ fn draw_tree(
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
             .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
-    } else if !node.is_leaf() {
+    } else if !tree[n].is_leaf() {
         svg.polygon()
             .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
             .style(|s| s.fill_color(Some(StyleColor::Percent(0., 0., 0.))));
     }
     if render.inner_nodes {
-        node.name.as_ref().map(|name| {
+        tree[n].data.name.as_ref().map(|name| {
             svg.text()
                 .pos(xoffset, yoffset - FONT_SIZE)
                 .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
@@ -383,7 +387,7 @@ fn draw_links(
 }
 
 pub fn render(
-    t: &Tree,
+    t: &NewickTree,
     genes: &GeneCache,
     colormap: &ColorMap,
     out_filename: &str,
@@ -392,8 +396,7 @@ pub fn render(
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
     let longest_name = t
         .leaf_names()
-        .iter()
-        .map(|(_, name)| name.map_or(0, |s| s.len()))
+        .map(|name| name.len())
         .max()
         .unwrap() as f32
         * FONT_SIZE;
@@ -401,11 +404,11 @@ pub fn render(
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
     draw_background(
-        &mut svg, genes, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width,
+        &mut svg, genes, depth, t, 0, 10.0, MARGIN_TOP, xlabels, width,
     );
     let mut links = Vec::new();
     draw_tree(
-        &mut svg, genes, colormap, depth, t, &t[0], 10.0, MARGIN_TOP, xlabels, width, &mut links,
+        &mut svg, genes, colormap, depth, t, 0, 10.0, MARGIN_TOP, xlabels, width, &mut links,
         render,
     );
     if render.links {

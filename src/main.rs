@@ -100,7 +100,7 @@ fn main() {
         );
         out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
         let out_filename = out_filename.to_str().unwrap();
-        let t = Tree::from_filename(filename).unwrap();
+        let t = newick::from_filename(filename).unwrap();
         match graph_type {
             "flat" => {
                 let db_filename = args.value_of("database").unwrap();

@@ -32,15 +32,15 @@ struct HtmlNode {
     color: String,
     children: Vec<HtmlNode>,
 
-    #[serde(rename="isDuplication")]
+    #[serde(rename = "isDuplication")]
     is_duplication: bool,
     confidence: f32,
     repr: Landscape,
     clustered: Option<Vec<PolyGene>>,
 }
 
-fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
-    fn process(tree: &Tree, node: usize, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
+fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
+    fn process(tree: &NewickTree, node: usize, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
         let descendants = tree.descendants(node);
         let mut common_ancestral = String::new();
         let clustered = {
@@ -48,7 +48,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
             let tails = descendants
                 .iter()
                 .filter_map(|&d| {
-                    if let Some(name) = &tree[d].name {
+                    if let Some(name) = &tree[d].data.name {
                         let gene_name = name.split('#').next().unwrap();
                         if let Some(DbGene {
                             ancestral,
@@ -165,7 +165,7 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
         };
 
         let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
-            if let Some(name) = &tree[node].name {
+            if let Some(name) = &tree[node].data.name {
                 let gene_name = name.split('#').next().unwrap();
                 if let Some(DbGene {
                     ancestral,
@@ -259,18 +259,15 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
             t_len,
             color,
             children: tree[node]
-                .children
+                .children()
                 .as_ref()
-                .map(|children| {
-                    children
-                        .iter()
-                        .map(|n| process(tree, *n, genes, colormap))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            is_duplication: tree[node].is_duplication(),
+                .iter()
+                .map(|n| process(tree, *n, genes, colormap))
+                .collect(),
+            is_duplication: tree.is_duplication(node),
             confidence: tree[node]
                 .data
+                .attrs
                 .get("DCS")
                 .and_then(|x| x.parse::<f32>().ok())
                 .unwrap_or(0.0),
@@ -289,9 +286,9 @@ fn draw_html(tree: &Tree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
     process(tree, 0, genes, colormap)
 }
 
-pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
+pub fn render(t: &NewickTree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
     #[derive(Template)]
-    #[template(path = "genominicus.html", escape="none")]
+    #[template(path = "genominicus.html", escape = "none")]
     struct GenominicusTemplate<'a> {
         css: &'a str,
         js_svg: &'a str,
@@ -309,7 +306,8 @@ pub fn render(t: &Tree, genes: &GeneCache, colormap: &ColorMap, out_filename: &s
     let t_lens = t
         .leaves()
         .filter_map(|n| {
-            t[n].name
+            t[n].data
+                .name
                 .as_ref()
                 .and_then(|name| name.split('#').next())
                 .and_then(|gene_name| genes.get(gene_name))

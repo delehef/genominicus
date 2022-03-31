@@ -30,36 +30,37 @@ fn draw_nodes_in_tree(
 ) {
     for mrca in nodes.keys() {
         let dups = &nodes[mrca];
-        let opacity = 1./dups.len() as f32;
+        let opacity = 1. / dups.len() as f32;
         let (mut x, mut y) = species_map.get(mrca).unwrap().clone();
         for dcs in dups {
             let c = StyleColor::Percent(1. - dcs, *dcs, 0.);
             svg.polygon()
-                .from_pos_dims(x - 3., y - 3. + K/2., 6., 6.)
+                .from_pos_dims(x - 3., y - 3. + K / 2., 6., 6.)
                 .style(|s| s.fill_color(Some(c)).fill_opacity(opacity));
-            x += 1.; y+= 1.;
+            x += 1.;
+            y += 1.;
         }
     }
 }
 
 // Returns (SvgGroup, map speciesname -> (coords))
 fn draw_species_tree(
-    species_tree: &Tree,
-    present_species: &[String],
+    species_tree: &NewickTree,
+    present_species: &[&str],
 ) -> (Group, HashMap<String, (f32, f32)>) {
     fn render_node(
         svg: &mut Group,
         x: f32,
         xlabels: f32,
         y: f32,
-        t: &Tree,
+        t: &NewickTree,
         n: usize,
-        present_species: &[String],
+        present_species: &[&str],
         species_map: &mut HashMap<String, (f32, f32)>,
     ) -> f32 {
         let mut y = y;
         if t[n].is_leaf() {
-            t[n].name.as_ref().map(|name| {
+            t[n].data.name.as_ref().map(|name| {
                 svg.line()
                     .from_coords(x, y + K, xlabels, y + K)
                     .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
@@ -74,15 +75,16 @@ fn draw_species_tree(
         } else {
             let old_y = y;
 
-            if let Some(name) = &t[n].name {
+            if let Some(name) = &t[n].data.name {
                 species_map.insert(name.to_owned(), (x, y));
             }
             for (i, c) in t.children(n).iter().enumerate() {
                 if t.leaves_of(*c).iter().any(|l| {
                     t[*l]
+                        .data
                         .name
                         .as_ref()
-                        .map(|name| present_species.contains(name))
+                        .map(|name| present_species.contains(&name.as_str()))
                         .unwrap_or(false)
                 }) {
                     if i == 0 {
@@ -123,8 +125,8 @@ fn draw_species_tree(
 }
 
 pub fn draw_duplications_blocks(
-    t: &Tree,
-    species_tree: &Tree,
+    t: &NewickTree,
+    species_tree: &NewickTree,
     species_map: &mut HashMap<String, (f32, f32)>,
     render: &RenderSettings,
     my_offset: f32,
@@ -133,10 +135,11 @@ pub fn draw_duplications_blocks(
     let mut xoffset = 0.;
     let mut duplication_sets = t
         .inners()
-        .filter(|n| t[*n].is_duplication())
+        .filter(|&n| t.is_duplication(n))
         .map(|n| {
-            fn species_name(t: &Tree, n: usize) -> String {
-                t[n].name
+            fn species_name(t: &NewickTree, n: usize) -> String {
+                t[n].data
+                    .name
                     .as_ref()
                     .unwrap()
                     .split('#')
@@ -146,7 +149,7 @@ pub fn draw_duplications_blocks(
             }
 
             let n = &t[n];
-            let children = n.children.as_ref().unwrap();
+            let children = n.children();
             assert!(children.len() == 2);
             let lefts = t
                 .leaves_of(children[0])
@@ -158,9 +161,9 @@ pub fn draw_duplications_blocks(
                 .iter()
                 .map(|n| species_name(t, *n))
                 .collect::<HashSet<_>>();
-            let dcs = n.data["DCS"].parse::<f32>().unwrap();
-            let elc_all = n.data["ELC"].parse::<i32>().unwrap();
-            let elc_large = n.data["ELLC"].parse::<i32>().unwrap();
+            let dcs = n.data.attrs["DCS"].parse::<f32>().unwrap();
+            let elc_all = n.data.attrs["ELC"].parse::<i32>().unwrap();
+            let elc_large = n.data.attrs["ELLC"].parse::<i32>().unwrap();
             let all_species = lefts
                 .iter()
                 .chain(rights.iter())
@@ -171,7 +174,7 @@ pub fn draw_duplications_blocks(
                 .collect::<Vec<_>>();
             let mrca = species_tree
                 .mrca(&all_species)
-                .and_then(|n| species_tree[n].name.as_ref());
+                .and_then(|n| species_tree[n].data.name.as_ref());
 
             (lefts, rights, dcs, elc_all, elc_large, mrca)
         })
@@ -276,24 +279,21 @@ pub fn draw_duplications_blocks(
 }
 
 pub fn render(
-    t: &Tree,
+    t: &NewickTree,
     species_tree_filename: &str,
     out_filename: &str,
     filter_species_tree: bool,
     render: &RenderSettings,
 ) {
     let mut svg = SvgDrawing::new();
-    let species_tree = Tree::from_filename(species_tree_filename).unwrap();
+    let species_tree = newick::from_filename(species_tree_filename).unwrap();
     let species_in_tree = t
         .leaf_names()
-        .iter()
-        .map(|(_, s)| s.as_ref().unwrap().split('#').nth(1).unwrap())
+        .map(|s| s.split('#').nth(1).unwrap())
         .collect::<HashSet<&str>>();
     let present_species = species_tree
         .leaf_names()
-        .iter()
-        .map(|(_, s)| s.cloned().unwrap())
-        .filter(|s| !filter_species_tree || species_in_tree.contains(s.as_str()))
+        .filter(|s| !filter_species_tree || species_in_tree.contains(s))
         .collect::<Vec<_>>();
 
     let (tree_group, mut present_species_map) = draw_species_tree(&species_tree, &present_species);

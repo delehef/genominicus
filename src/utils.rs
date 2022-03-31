@@ -197,10 +197,11 @@ fn tails(
     )
 }
 
-pub fn make_colormap(tree: &Tree, genes: &GeneCache) -> ColorMap {
+pub fn make_colormap(tree: &NewickTree, genes: &GeneCache) -> ColorMap {
     let mut colormap = ColorMap::new();
     for l in tree.leaves() {
         if let Some(g) = tree[l]
+            .data
             .name
             .as_ref()
             .and_then(|name| name.split('#').next())
@@ -217,12 +218,12 @@ pub fn make_colormap(tree: &Tree, genes: &GeneCache) -> ColorMap {
 }
 
 pub fn make_colormap_per_duplication(
-    tree: &Tree,
+    tree: &NewickTree,
     genes: &GeneCache,
     colorize_all: bool,
 ) -> ColorMap {
     fn create_gradient(
-        t: &Tree,
+        t: &NewickTree,
         leave_nodes: &[usize],
         genes: &GeneCache,
         colormap: &mut ColorMap,
@@ -232,7 +233,13 @@ pub fn make_colormap_per_duplication(
         }
         let tails = leave_nodes
             .iter()
-            .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
+            .filter_map(|l| {
+                t[*l]
+                    .data
+                    .name
+                    .as_ref()
+                    .and_then(|name| name.split('#').next())
+            })
             .filter_map(|name| genes.get(name))
             .map(|g| {
                 g.left_tail
@@ -292,28 +299,31 @@ pub fn make_colormap_per_duplication(
         }
     }
 
-    fn rec_fill_colormap(tree: &Tree, node: usize, genes: &GeneCache, colormap: &mut ColorMap) {
-        if node == 0 || tree[node].is_duplication() {
-            if let Some(children) = tree[node].children.as_ref() {
-                let members = children
-                    .iter()
-                    .filter(|c| tree[**c].is_leaf())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                create_gradient(tree, &members, genes, colormap);
+    fn rec_fill_colormap(
+        tree: &NewickTree,
+        node: usize,
+        genes: &GeneCache,
+        colormap: &mut ColorMap,
+    ) {
+        if node == 0 || tree.is_duplication(node) {
+            let children = tree[node].children();
+            let members = children
+                .iter()
+                .filter(|c| tree[**c].is_leaf())
+                .cloned()
+                .collect::<Vec<_>>();
+            create_gradient(tree, &members, genes, colormap);
 
-                children
-                    .iter()
-                    .filter(|c| !tree[**c].is_leaf())
-                    .for_each(|&c| create_gradient(tree, &tree.leaves_of(c), genes, colormap));
-            }
-        }
-
-        if let Some(children) = tree[node].children.as_ref() {
             children
                 .iter()
-                .for_each(|&c| rec_fill_colormap(tree, c, genes, colormap))
+                .filter(|c| !tree[**c].is_leaf())
+                .for_each(|&c| create_gradient(tree, &tree.leaves_of(c), genes, colormap));
         }
+
+        tree[node]
+            .children()
+            .iter()
+            .for_each(|&c| rec_fill_colormap(tree, c, genes, colormap))
     }
 
     let mut colormap = ColorMap::new();
@@ -321,6 +331,7 @@ pub fn make_colormap_per_duplication(
     if colorize_all {
         for l in tree.leaves() {
             if let Some(g) = tree[l]
+                .data
                 .name
                 .as_ref()
                 .and_then(|name| name.split('#').next())
@@ -337,16 +348,22 @@ pub fn make_colormap_per_duplication(
     colormap
 }
 
-pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene> {
-    fn reorder_tails(tree: &Tree, node: usize, genes: &mut GeneCache) {
-        fn reorder_leaves(t: &Tree, leave_nodes: &[usize], genes: &mut GeneCache) {
+pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, DbGene> {
+    fn reorder_tails(tree: &NewickTree, node: usize, genes: &mut GeneCache) {
+        fn reorder_leaves(t: &NewickTree, leave_nodes: &[usize], genes: &mut GeneCache) {
             if leave_nodes.len() < 2 {
                 return;
             }
             // Chose a random leaf from the leaves featuring the longest tails as a reference
             let tails = leave_nodes
                 .iter()
-                .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
+                .filter_map(|l| {
+                    t[*l]
+                        .data
+                        .name
+                        .as_ref()
+                        .and_then(|name| name.split('#').next())
+                })
                 .filter_map(|name| genes.get(name))
                 .map(|g| (g.species.clone(), g.left_tail.clone(), g.right_tail.clone()))
                 .collect::<Vec<_>>();
@@ -379,7 +396,13 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
 
             leave_nodes
                 .iter()
-                .filter_map(|l| t[*l].name.as_ref().and_then(|name| name.split('#').next()))
+                .filter_map(|l| {
+                    t[*l]
+                        .data
+                        .name
+                        .as_ref()
+                        .and_then(|name| name.split('#').next())
+                })
                 .for_each(|l_name| {
                     if let Some(gene) = genes.get_mut(l_name) {
                         let left_tail: HashSet<&String> = HashSet::from_iter(&gene.left_tail);
@@ -397,31 +420,32 @@ pub fn make_genes_cache(t: &Tree, db: &mut Connection) -> HashMap<String, DbGene
                 })
         }
 
-        if node == 0 || tree[node].is_duplication() {
-            if let Some(children) = tree[node].children.as_ref() {
-                let members = children
-                    .iter()
-                    .filter(|c| tree[**c].is_leaf())
-                    .cloned()
-                    .collect::<Vec<_>>();
-                reorder_leaves(tree, &members, genes);
+        if node == 0 || tree.is_duplication(node) {
+            let children = tree[node].children();
+            let members = children
+                .iter()
+                .filter(|c| tree[**c].is_leaf())
+                .cloned()
+                .collect::<Vec<_>>();
+            reorder_leaves(tree, &members, genes);
 
-                children
-                    .iter()
-                    .filter(|c| !tree[**c].is_leaf())
-                    .for_each(|&c| reorder_leaves(tree, &tree.leaves_of(c), genes));
-            }
+            children
+                .iter()
+                .filter(|c| !tree[**c].is_leaf())
+                .for_each(|&c| reorder_leaves(tree, &tree.leaves_of(c), genes));
         }
 
-        if let Some(children) = tree[node].children.as_ref() {
-            children.iter().for_each(|&c| reorder_tails(tree, c, genes))
-        }
+        tree[node]
+            .children()
+            .iter()
+            .for_each(|&c| reorder_tails(tree, c, genes))
     }
 
     let mut r = t
         .leaves()
         .filter_map(|n| {
-            t[n].name
+            t[n].data
+                .name
                 .as_ref()
                 .map(|name| name.split('#').next().unwrap())
         })
