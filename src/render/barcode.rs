@@ -138,14 +138,7 @@ pub fn draw_duplications_blocks(
         .filter(|&n| t.is_duplication(n))
         .map(|n| {
             fn species_name(t: &NewickTree, n: usize) -> String {
-                t[n].data
-                    .name
-                    .as_ref()
-                    .unwrap()
-                    .split('#')
-                    .nth(1)
-                    .unwrap()
-                    .to_owned()
+                t[n].data.attrs["S"].to_string()
             }
 
             let n = &t[n];
@@ -288,8 +281,8 @@ pub fn render(
     let mut svg = SvgDrawing::new();
     let species_tree = newick::from_filename(species_tree_filename).unwrap();
     let species_in_tree = t
-        .leaf_names()
-        .map(|s| s.split('#').nth(1).unwrap())
+        .leaves()
+        .map(|s| t[s].data.attrs["S"].as_str())
         .collect::<HashSet<&str>>();
     let present_species = species_tree
         .leaf_names()

@@ -34,7 +34,7 @@ fn main() {
                 .short('D')
                 .long("database")
                 .help("The database to use")
-                .required_if_eq_any(&[("type", "barcode"), ("type", "html")])
+                .required_if_eq_any(&[("type", "barcode"), ("type", "html"), ("type", "flat")])
                 .takes_value(true),
         )
         .arg(

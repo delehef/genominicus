@@ -10,7 +10,7 @@ edition = "2018"
 anyhow = "1"
 smartstring = "0.2"
 svarog = { path = "../svarog" }
-newick = { git = "https://github.com/delehef/newick.git" }
+newick = { path = "../../newick" }
 md5 = "0.7"
 rusqlite = "0.25"
 clap = { version="3", features=["cargo"] }

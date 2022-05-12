@@ -394,11 +394,12 @@ pub fn render(
     render: &RenderSettings,
 ) {
     let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
-    let longest_name = t
-        .leaf_names()
-        .map(|name| name.len())
-        .max()
-        .unwrap() as f32
+    let longest_name = (t.leaf_names().map(|name| name.len()).max().unwrap() as f32
+        + t.leaves()
+            .map(|l| t[l].data.attrs.get("S").map(|s| s.len()).unwrap_or(0))
+            .max()
+            .unwrap() as f32
+        + 20.)
         * FONT_SIZE;
     let xlabels = 0.85 * (10. + depth + longest_name + 20.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;

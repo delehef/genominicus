@@ -9,7 +9,7 @@ use std::iter::FromIterator;
 use svarog::*;
 
 const ANCESTRAL_QUERY: &str = concat!(
-    "select gene, ancestral, species, chr, start, t_len, direction, left_tail_names, right_tail_names from genomes where protein=?",
+    "select gene, ancestral, species, chr, start, direction, left_tail_names, right_tail_names from genomes where protein=?",
 );
 const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
 const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
@@ -95,7 +95,7 @@ fn get_gene(db: &mut Connection, name: &str) -> std::result::Result<DbGene, rusq
         let species: String = r.get("species").unwrap();
         let chr: String = r.get("chr").unwrap();
         let pos: i32 = r.get("start").unwrap();
-        let t_len: i32 = r.get("t_len").unwrap();
+        let t_len: i32 = r.get("t_len").unwrap_or_default();
 
         let left_tail: String = r.get("left_tail_names").unwrap();
         let left_tail = left_tail
@@ -204,7 +204,6 @@ pub fn make_colormap(tree: &NewickTree, genes: &GeneCache) -> ColorMap {
             .data
             .name
             .as_ref()
-            .and_then(|name| name.split('#').next())
             .and_then(|name| genes.get(name))
         {
             g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
@@ -238,7 +237,6 @@ pub fn make_colormap_per_duplication(
                     .data
                     .name
                     .as_ref()
-                    .and_then(|name| name.split('#').next())
             })
             .filter_map(|name| genes.get(name))
             .map(|g| {
@@ -334,7 +332,6 @@ pub fn make_colormap_per_duplication(
                 .data
                 .name
                 .as_ref()
-                .and_then(|name| name.split('#').next())
                 .and_then(|name| genes.get(name))
             {
                 g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
@@ -362,7 +359,6 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
                         .data
                         .name
                         .as_ref()
-                        .and_then(|name| name.split('#').next())
                 })
                 .filter_map(|name| genes.get(name))
                 .map(|g| (g.species.clone(), g.left_tail.clone(), g.right_tail.clone()))
@@ -401,7 +397,6 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
                         .data
                         .name
                         .as_ref()
-                        .and_then(|name| name.split('#').next())
                 })
                 .for_each(|l_name| {
                     if let Some(gene) = genes.get_mut(l_name) {
@@ -447,7 +442,6 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
             t[n].data
                 .name
                 .as_ref()
-                .map(|name| name.split('#').next().unwrap())
         })
         .map(|name| {
             (
