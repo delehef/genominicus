@@ -114,7 +114,7 @@ fn draw_species_tree(
     render_node(
         &mut out,
         0.,
-        species_tree.topological_depth().1 * K,
+        species_tree.topological_depth().1 as f32 * K,
         0.,
         species_tree,
         0,
@@ -279,7 +279,7 @@ pub fn render(
     render: &RenderSettings,
 ) {
     let mut svg = SvgDrawing::new();
-    let species_tree = newick::from_filename(species_tree_filename).unwrap();
+    let species_tree = newick::one_from_filename(species_tree_filename).unwrap();
     let species_in_tree = t
         .leaves()
         .map(|s| t[s].data.attrs["S"].as_str())

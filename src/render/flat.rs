@@ -393,7 +393,7 @@ pub fn render(
     out_filename: &str,
     render: &RenderSettings,
 ) {
-    let depth = BRANCH_WIDTH * (t.topological_depth().1 + 1.);
+    let depth = BRANCH_WIDTH * (t.topological_depth().1 as f32 + 1.);
     let longest_name = (t.leaf_names().map(|name| name.len()).max().unwrap() as f32
         + t.leaves()
             .map(|l| t[l].data.attrs.get("S").map(|s| s.len()).unwrap_or(0))

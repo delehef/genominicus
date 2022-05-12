@@ -3,12 +3,14 @@ use colored::Colorize;
 use newick::*;
 use rusqlite::*;
 use utils::*;
+use anyhow::{Context, Result};
+
 
 mod align;
 mod render;
 mod utils;
 
-fn main() {
+fn main() -> Result<()> {
     let args = App::new("Genominicus")
         .version(clap::crate_version!())
         .author(clap::crate_authors!())
@@ -100,7 +102,7 @@ fn main() {
         );
         out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
         let out_filename = out_filename.to_str().unwrap();
-        let t = newick::from_filename(filename).unwrap();
+        let t = newick::one_from_filename(filename).context(format!("failed to read `{}`", filename))?;
         match graph_type {
             "flat" => {
                 let db_filename = args.value_of("database").unwrap();
@@ -153,4 +155,6 @@ fn main() {
             _ => unimplemented!(),
         };
     }
+
+    Ok(())
 }
