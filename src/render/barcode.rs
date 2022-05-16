@@ -117,7 +117,7 @@ fn draw_species_tree(
         species_tree.topological_depth().1 as f32 * K,
         0.,
         species_tree,
-        0,
+        species_tree.root(),
         present_species,
         &mut species_map,
     );

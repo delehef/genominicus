@@ -158,7 +158,7 @@ fn draw_tree(
 
 pub fn render(t: &NewickTree, out_filename: &str, render: &RenderSettings) {
     let mut svg = SvgDrawing::new();
-    draw_tree(&mut svg, t, 0, 80., 80., render);
+    draw_tree(&mut svg, t, t.root(), 80., 80., render);
     svg.auto_fit();
     let mut out = File::create(out_filename).unwrap();
     out.write_all(svg.render_svg().as_bytes()).unwrap();

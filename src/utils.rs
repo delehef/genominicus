@@ -415,7 +415,7 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
                 })
         }
 
-        if node == 0 || tree.is_duplication(node) {
+        if tree.is_root(node) || tree.is_duplication(node) {
             let children = tree[node].children();
             let members = children
                 .iter()
@@ -451,6 +451,6 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
         })
         .collect();
 
-    reorder_tails(t, 0, &mut r);
+    reorder_tails(t, t.root(), &mut r);
     r
 }
