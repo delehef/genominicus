@@ -328,7 +328,7 @@ fn draw_tree(
             .style(|s| s.fill_color(Some(StyleColor::Percent(0., 0., 0.))));
     }
     if render.inner_nodes {
-        tree[n].data.name.as_ref().map(|name| {
+        tree[n].data.attrs.get("S").map(|name| {
             svg.text()
                 .pos(xoffset, yoffset - FONT_SIZE)
                 .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
