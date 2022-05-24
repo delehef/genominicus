@@ -46,6 +46,7 @@ fn draw_nodes_in_tree(
 // Returns (SvgGroup, map speciesname -> (coords))
 fn draw_species_tree(
     species_tree: &NewickTree,
+    species_to_render: &[&str],
     present_species: &[&str],
 ) -> (Group, HashMap<String, (f32, f32)>) {
     fn render_node(
@@ -55,6 +56,7 @@ fn draw_species_tree(
         y: f32,
         t: &NewickTree,
         n: usize,
+        species_to_render: &[&str],
         present_species: &[&str],
         species_map: &mut HashMap<String, (f32, f32)>,
     ) -> f32 {
@@ -68,7 +70,15 @@ fn draw_species_tree(
                 svg.text()
                     .pos(xlabels + K, y + FONT_SIZE)
                     .text(name)
-                    .style(|s| s.fill_color(Some(name2color(name))));
+                    .style(|s| {
+                        s.fill_color(Some(name2color(name))).fill_opacity(
+                            if present_species.contains(&name.as_str()) {
+                                1.0
+                            } else {
+                                0.3
+                            },
+                        )
+                    });
                 species_map.insert(name.to_owned(), (xlabels, y))
             });
             y += K;
@@ -84,7 +94,7 @@ fn draw_species_tree(
                         .data
                         .name
                         .as_ref()
-                        .map(|name| present_species.contains(&name.as_str()))
+                        .map(|name| species_to_render.contains(&name.as_str()))
                         .unwrap_or(false)
                 }) {
                     if i == 0 {
@@ -102,7 +112,7 @@ fn draw_species_tree(
                             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                             .shift(0., -K / 2.);
                     }
-                    y = render_node(svg, x + K, xlabels, y, t, *c, present_species, species_map);
+                    y = render_node(svg, x + K, xlabels, y, t, *c, species_to_render, present_species, species_map);
                 }
             }
         }
@@ -118,6 +128,7 @@ fn draw_species_tree(
         0.,
         species_tree,
         species_tree.root(),
+        species_to_render,
         present_species,
         &mut species_map,
     );
@@ -284,12 +295,16 @@ pub fn render(
         .leaves()
         .map(|s| t[s].data.attrs["S"].as_str())
         .collect::<HashSet<&str>>();
-    let present_species = species_tree
+    let species_to_render = species_tree
         .leaf_names()
         .filter(|s| !filter_species_tree || species_in_tree.contains(s))
         .collect::<Vec<_>>();
+    let present_species = species_tree
+        .leaf_names()
+        .filter(|s| species_in_tree.contains(s))
+        .collect::<Vec<_>>();
 
-    let (tree_group, mut present_species_map) = draw_species_tree(&species_tree, &present_species);
+    let (tree_group, mut present_species_map) = draw_species_tree(&species_tree, &species_to_render, &present_species);
     let (mut dups_group, dups_nodes) = draw_duplications_blocks(
         t,
         &species_tree,
@@ -298,7 +313,7 @@ pub fn render(
         tree_group.bbox().x2,
     );
     dups_group.shift(tree_group.bbox().x2, 0.);
-    draw_stripes(&mut svg, present_species.len(), dups_group.bbox().x2);
+    draw_stripes(&mut svg, species_to_render.len(), dups_group.bbox().x2);
     svg.push(Box::new(tree_group));
     svg.push(Box::new(dups_group));
     draw_nodes_in_tree(&mut svg, &dups_nodes, &present_species_map);
