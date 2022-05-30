@@ -112,7 +112,17 @@ fn draw_species_tree(
                             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                             .shift(0., -K / 2.);
                     }
-                    y = render_node(svg, x + K, xlabels, y, t, *c, species_to_render, present_species, species_map);
+                    y = render_node(
+                        svg,
+                        x + K,
+                        xlabels,
+                        y,
+                        t,
+                        *c,
+                        species_to_render,
+                        present_species,
+                        species_map,
+                    );
                 }
             }
         }
@@ -142,116 +152,107 @@ pub fn draw_duplications_blocks(
     render: &RenderSettings,
     my_offset: f32,
 ) -> (Group, HashMap<String, Vec<f32>>) {
+    fn species_name(t: &NewickTree, n: usize) -> String {
+        t[n].data.attrs["S"].to_string()
+    }
+
     let mut out = Group::new();
     let mut xoffset = 0.;
-    let mut duplication_sets = t
+    let mut duplication_sets: Vec<(Vec<(HashSet<String>, i32, i32)>, f32, usize)> = t
         .inners()
         .filter(|&n| t.is_duplication(n))
         .map(|n| {
-            fn species_name(t: &NewickTree, n: usize) -> String {
-                t[n].data.attrs["S"].to_string()
-            }
-
-            let n = &t[n];
-            let children = n.children();
-            assert!(children.len() == 2);
-            let lefts = t
-                .leaves_of(children[0])
+            // assert!(children.len() == 2, "has {} children", children.len());
+            let arms = t[n]
+                .children()
                 .iter()
-                .map(|n| species_name(t, *n))
-                .collect::<HashSet<_>>();
-            let rights = t
-                .leaves_of(children[1])
-                .iter()
-                .map(|n| species_name(t, *n))
-                .collect::<HashSet<_>>();
-            let dcs = n.data.attrs["DCS"].parse::<f32>().unwrap();
-            let elc_all = n.data.attrs["ELC"].parse::<i32>().unwrap();
-            let elc_large = n.data.attrs["ELLC"].parse::<i32>().unwrap();
-            let all_species = lefts
-                .iter()
-                .chain(rights.iter())
-                .filter_map(|name| {
-                    species_tree
-                        .find_leaf(|n| n.name.as_ref().map(|n| *n == *name).unwrap_or(false))
+                .map(|&c| {
+                    (
+                        t.leaves_of(c)
+                            .iter()
+                            .map(|&n| species_name(t, n))
+                            .collect::<HashSet<_>>(),
+                        0,
+                        0,
+                    )
                 })
                 .collect::<Vec<_>>();
-            let mrca = species_tree
-                .mrca(&all_species)
-                .and_then(|n| species_tree[n].data.name.as_ref());
+            let all_species = t
+                .leaves_of(n)
+                .iter()
+                .map(|o| {
+                    species_tree
+                        .find_leaf(|n| {
+                            n.name
+                                .as_ref()
+                                .map(|n| *n == species_name(t, *o))
+                                .unwrap_or(false)
+                        })
+                        .expect(&format!(
+                            "{} not found in species tree",
+                            species_name(t, *o)
+                        ))
+                })
+                .collect::<Vec<_>>();
 
-            (lefts, rights, dcs, elc_all, elc_large, mrca)
+            // let dcs = n.data.attrs["DCS"].parse::<f32>().unwrap();
+            // let elc_all = n.data.attrs["ELC"].parse::<i32>().unwrap();
+            // let elc_large = n.data.attrs["ELLC"].parse::<i32>().unwrap();
+
+            let mrca = species_tree.mrca(&all_species).unwrap();
+            (
+                arms,
+                t[n].data.attrs["DCS"].parse::<f32>().unwrap_or_default(),
+                mrca,
+            )
         })
         .collect::<Vec<_>>();
-    duplication_sets.sort_by(|a, b| {
-        let a_species_ys =
-            a.0.iter()
-                .chain(a.1.iter())
-                .map(|s| species_map[s].1 as i32);
-        let b_species_ys =
-            b.0.iter()
-                .chain(b.1.iter())
-                .map(|s| species_map[s].1 as i32);
-        let a_span = a_species_ys.clone().max().unwrap() - a_species_ys.clone().min().unwrap();
-        let b_span = b_species_ys.clone().max().unwrap() - b_species_ys.clone().min().unwrap();
-        match b_span.cmp(&a_span) {
-            std::cmp::Ordering::Equal => a_species_ys
-                .min()
-                .unwrap()
-                .cmp(&b_species_ys.min().unwrap()),
-            x => x,
-        }
+    duplication_sets.sort_by_cached_key(|a| {
+        (
+            -(species_tree.leaves_of(a.2).len() as i64),
+            -(a.0.iter().map(|x| x.0.len()).sum::<usize>() as i64),
+        )
     });
 
     let mut dup_nodes: HashMap<String, Vec<f32>> = HashMap::new();
-    for d in duplication_sets {
-        let lefts = &d.0;
-        let rights = &d.1;
-        let dcs = d.2;
-        let elc_all = d.3;
-        let elc_large = d.4;
+    for d in duplication_sets.iter() {
+        let dcs = d.1;
         let c = StyleColor::Percent(1. - dcs, dcs, 0.);
-        if let Some(mrca) = d.5 {
-            dup_nodes.entry(mrca.clone()).or_insert(vec![]).push(dcs);
-        }
+        // let elc_all = d.3;
+        // let elc_large = d.4;
+        let mrca = d.2;
+        let mrca_name = species_tree[mrca].data.name.as_ref().unwrap();
+        dup_nodes
+            .entry(mrca_name.to_owned())
+            .or_insert(vec![])
+            .push(dcs);
 
-        let left_min = lefts
-            .iter()
-            .map(|s| species_map.get(s).unwrap().1)
-            .fold(f32::INFINITY, f32::min);
-        let left_max = lefts
-            .iter()
-            .map(|s| species_map.get(s).unwrap().1)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let right_min = rights
-            .iter()
-            .map(|s| species_map.get(s).unwrap().1)
-            .fold(f32::INFINITY, f32::min);
-        let right_max = rights
-            .iter()
-            .map(|s| species_map.get(s).unwrap().1)
-            .fold(f32::NEG_INFINITY, f32::max);
-        let y_min = left_min.min(right_min);
-        let y_max = left_max.max(right_max);
+        let y_min =
+            d.0.iter()
+                .flat_map(|a| a.0.iter().map(|s| species_map.get(s).unwrap().1))
+                .fold(f32::INFINITY, f32::min);
+        let y_max =
+            d.0.iter()
+                .flat_map(|a| a.0.iter().map(|s| species_map.get(s).unwrap().1))
+                .fold(f32::NEG_INFINITY, f32::max);
+
         out.polygon()
-            .from_corners((xoffset, y_min), (xoffset + 2. * K, y_max + K))
+            .from_corners(
+                (xoffset, y_min),
+                (xoffset + d.0.len() as f32 * K, y_max + K),
+            )
             .style(|s| {
                 s.fill_color(Some(c.clone()));
                 s.fill_opacity(0.3)
             });
 
-        for s in lefts.iter() {
-            let y = species_map.get(s).unwrap().1;
-            out.polygon()
-                .from_pos_dims(xoffset, y, K, K)
-                .style(|s| s.fill_color(Some(c.clone())));
-        }
-
-        for s in rights.iter() {
-            let y = species_map.get(s).unwrap().1;
-            out.polygon()
-                .from_pos_dims(xoffset + K, y, K, K)
-                .style(|s| s.fill_color(Some(c.clone())));
+        for (shift, arm) in d.0.iter().enumerate() {
+            for species in arm.0.iter() {
+                let y = species_map.get(species).unwrap().1;
+                out.polygon()
+                    .from_pos_dims(xoffset + shift as f32 * K, y, K, K)
+                    .style(|s| s.fill_color(Some(c.clone())));
+            }
         }
 
         let mut label_offset = 0.;
@@ -262,22 +263,22 @@ pub fn draw_duplications_blocks(
                 .transform(|t| t.rotate_from(-45., xoffset, y_min));
             label_offset += 1.;
         }
-        if render.elc {
-            out.text()
-                .pos(xoffset + 1.1 * label_offset * K, y_min)
-                .text(format!("ELC:{}", elc_all))
-                .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
-            label_offset += 1.;
-        }
-        if render.ellc {
-            out.text()
-                .pos(xoffset + 1.1 * label_offset * K, y_min)
-                .text(format!("ELLC:{}", elc_large))
-                .transform(|t| t.rotate_from(-45., xoffset + 2.4 * K, y_min));
-            label_offset += 1.;
-        }
+        // if render.elc {
+        //     out.text()
+        //         .pos(xoffset + 1.1 * label_offset * K, y_min)
+        //         .text(format!("ELC:{}", elc_all))
+        //         .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
+        //     label_offset += 1.;
+        // }
+        // if render.ellc {
+        //     out.text()
+        //         .pos(xoffset + 1.1 * label_offset * K, y_min)
+        //         .text(format!("ELLC:{}", elc_large))
+        //         .transform(|t| t.rotate_from(-45., xoffset + 2.4 * K, y_min));
+        //     label_offset += 1.;
+        // }
 
-        xoffset += 2. * K + 10.;
+        xoffset += d.0.len() as f32 * K + 10.;
     }
     (out, dup_nodes)
 }
@@ -304,7 +305,8 @@ pub fn render(
         .filter(|s| species_in_tree.contains(s))
         .collect::<Vec<_>>();
 
-    let (tree_group, mut present_species_map) = draw_species_tree(&species_tree, &species_to_render, &present_species);
+    let (tree_group, mut present_species_map) =
+        draw_species_tree(&species_tree, &species_to_render, &present_species);
     let (mut dups_group, dups_nodes) = draw_duplications_blocks(
         t,
         &species_tree,
