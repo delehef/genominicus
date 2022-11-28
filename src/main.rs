@@ -1,10 +1,8 @@
+use anyhow::{Context, Result};
 use clap::*;
 use colored::Colorize;
-use newick::*;
 use rusqlite::*;
 use utils::*;
-use anyhow::{Context, Result};
-
 
 mod align;
 mod render;
@@ -95,14 +93,19 @@ fn main() -> Result<()> {
     };
 
     for filename in args.values_of_t::<String>("FILE").unwrap().iter() {
-        println!("Rendering {} as {}", filename.bold().magenta(), graph_type.bold().yellow());
+        println!(
+            "Rendering {} as {}",
+            filename.bold().magenta(),
+            graph_type.bold().yellow()
+        );
         let mut out_filename = std::path::PathBuf::from(
             args.value_of_t("OUT")
                 .unwrap_or_else(|_| filename.to_string()),
         );
         out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
         let out_filename = out_filename.to_str().unwrap();
-        let t = newick::one_from_filename(filename).context(format!("failed to read `{}`", filename))?;
+        let t = newick::one_from_filename(filename)
+            .context(format!("failed to read `{}`", filename))?;
         match graph_type {
             "flat" => {
                 let db_filename = args.value_of("database").unwrap();

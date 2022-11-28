@@ -2,17 +2,17 @@
 name = "genominicus"
 version = "0.1.0"
 authors = ["Franklin Delehelle <delehelle@ens.fr>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1"
-smartstring = "0.2"
-svarog = { path = "../svarog" }
-newick = { path = "../../newick" }
+smartstring = "1"
+svarog = "0.5"
+newick = "0.5"
 md5 = "0.7"
-rusqlite = "0.25"
+rusqlite = "0.28"
 clap = { version="3", features=["cargo"] }
 colorsys = "0.6"
 palette = "0.6"
