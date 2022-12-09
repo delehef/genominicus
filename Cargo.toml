@@ -13,7 +13,7 @@ svarog = "0.5"
 newick = "0.5"
 md5 = "0.7"
 rusqlite = "0.28"
-clap = { version="3", features=["cargo"] }
+clap = { version="4", features=["derive"] }
 colorsys = "0.6"
 palette = "0.6"
 petgraph = "0.6"

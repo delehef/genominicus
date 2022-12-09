@@ -8,113 +8,88 @@ mod align;
 mod render;
 mod utils;
 
-fn main() -> Result<()> {
-    let args = App::new("Genominicus")
-        .version(clap::crate_version!())
-        .author(clap::crate_authors!())
-        .arg(
-            Arg::new("type")
-                .help("The graph type to use")
-                .short('T')
-                .long("type")
-                .possible_values(&["flat", "html", "barcode", "skeleton"])
-                .default_value("flat")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("species-tree")
-                .short('S')
-                .long("species-tree")
-                .help("The species tree to plot against")
-                .required_if_eq("type", "barcode")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("database")
-                .short('D')
-                .long("database")
-                .help("The database to use")
-                .required_if_eq_any(&[("type", "barcode"), ("type", "html"), ("type", "flat")])
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("FILE")
-                .help("Sets the input file to use")
-                .required(true)
-                .multiple_values(true),
-        )
-        .arg(
-            Arg::new("OUT")
-                .short('o')
-                .long("out")
-                .help("Output filename")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("colorize_per_duplication")
-                .help("Introduce a new set of color gradients at each duplicated node")
-                .long("colorize-duplications"),
-        )
-        .arg(
-            Arg::new("colorize_all")
-                .help("Ensure that all genes are colorized")
-                .long("colorize-all"),
-        )
-        .arg(
-            Arg::new("filter_species_tree")
-                .help("Filter out species present in the species tree but not in the gene tree")
-                .long("filter-species"),
-        )
-        .arg(
-            Arg::new("annotations")
-                .long("annotations")
-                .value_delimiter(',')
-                .multiple_values(true)
-                .possible_values(["links", "inner-nodes", "cs", "elc", "ellc"]),
-        )
-        .get_matches();
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Args {
+    #[arg(required = true)]
+    files: Vec<String>,
 
-    let graph_type = args.value_of("type").unwrap();
-    let colorize_per_duplication = args.is_present("colorize_per_duplication");
-    let colorize_all = args.is_present("colorize_all");
+    #[arg(short = 'o')]
+    out: Option<String>,
+
+    #[arg(short = 'T', long = "type", default_value = "flat", value_parser=["flat", "html", "barcode", "skeleton"])]
+    graph_type: String,
+
+    #[arg(
+        short = 'S',
+        long = "species-tree",
+        required_if_eq("graph_type", "barcode")
+    )]
+    species_tree: Option<String>,
+
+    #[arg(
+        short='D',
+        long="database",
+        required_if_eq_any([("graph_type", "barcode"), ("graph_type", "html"), ("graph_type", "flat")])
+    )]
+    database: Option<String>,
+
+    #[arg(
+        long = "colorize-per-duplication",
+        help = "Introduce a new set of color gradients at each duplicated node"
+    )]
+    colorize_per_duplication: bool,
+
+    #[arg(long = "colorize-all", help = "Ensure that all genes are colorized")]
+    colorize_all: bool,
+
+    #[arg(
+        long = "filter-species",
+        help = "Filter out species present in the species tree but not in the gene tree"
+    )]
+    filter_species_tree: bool,
+
+    #[arg(long="annotations", value_delimiter = ',', value_parser=["links", "inner-nodes", "cs", "elc", "ellc"])]
+    annotations: Vec<String>,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
 
     let mut render_settings = RenderSettings::default();
-    if let Some(annotations) = args.values_of("annotations") {
-        for annotation in annotations {
-            match annotation {
-                "links" => render_settings.links = true,
-                "cs" => render_settings.cs = true,
-                "elc" => render_settings.elc = true,
-                "ellc" => render_settings.ellc = true,
-                "inner-nodes" => render_settings.inner_nodes = true,
-                _ => unreachable!(),
-            }
+    for annotation in args.annotations {
+        match annotation.as_str() {
+            "links" => render_settings.links = true,
+            "cs" => render_settings.cs = true,
+            "elc" => render_settings.elc = true,
+            "ellc" => render_settings.ellc = true,
+            "inner-nodes" => render_settings.inner_nodes = true,
+            _ => unreachable!(),
         }
-    };
+    }
 
-    for filename in args.values_of_t::<String>("FILE").unwrap().iter() {
+    for filename in args.files.iter() {
         println!(
             "Rendering {} as {}",
-            filename.bold().magenta(),
-            graph_type.bold().yellow()
+            filename.bold().bright_white(),
+            args.graph_type.bold().yellow()
         );
-        let mut out_filename = std::path::PathBuf::from(
-            args.value_of_t("OUT")
-                .unwrap_or_else(|_| filename.to_string()),
-        );
+        let mut out_filename =
+            std::path::PathBuf::from(args.out.clone().unwrap_or_else(|| filename.to_string()));
         out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
         let out_filename = out_filename.to_str().unwrap();
         let t = newick::one_from_filename(filename)
             .context(format!("failed to read `{}`", filename))?;
-        match graph_type {
+        match args.graph_type.as_str() {
             "flat" => {
-                let db_filename = args.value_of("database").unwrap();
-                let mut db =
-                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY)
-                        .unwrap();
+                let mut db = Connection::open_with_flags(
+                    args.database.as_ref().unwrap(),
+                    OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )
+                .unwrap();
                 let genes = make_genes_cache(&t, &mut db);
-                let colormap = if colorize_per_duplication {
-                    make_colormap_per_duplication(&t, &genes, colorize_all)
+                let colormap = if args.colorize_per_duplication {
+                    make_colormap_per_duplication(&t, &genes, args.colorize_all)
                 } else {
                     make_colormap(&t, &genes)
                 };
@@ -127,13 +102,14 @@ fn main() -> Result<()> {
                 );
             }
             "html" => {
-                let db_filename = args.value_of("database").unwrap();
-                let mut db =
-                    Connection::open_with_flags(db_filename, OpenFlags::SQLITE_OPEN_READ_ONLY)
-                        .unwrap();
+                let mut db = Connection::open_with_flags(
+                    &args.database.as_ref().unwrap(),
+                    OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )
+                .unwrap();
                 let genes = make_genes_cache(&t, &mut db);
-                let colormap = if colorize_per_duplication {
-                    make_colormap_per_duplication(&t, &genes, colorize_all)
+                let colormap = if args.colorize_per_duplication {
+                    make_colormap_per_duplication(&t, &genes, args.colorize_all)
                 } else {
                     make_colormap(&t, &genes)
                 };
@@ -142,9 +118,9 @@ fn main() -> Result<()> {
             "barcode" => {
                 render::barcode::render(
                     &t,
-                    args.value_of("species-tree").unwrap(),
+                    args.species_tree.as_ref().unwrap(),
                     &format!("{}-barcode.svg", out_filename),
-                    args.is_present("filter_species_tree"),
+                    args.filter_species_tree,
                     &render_settings,
                 );
             }
