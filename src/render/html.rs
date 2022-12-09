@@ -69,7 +69,6 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                                     .collect::<Vec<String>>(),
                             ))
                         } else {
-                            eprintln!("{} -- {} not found", name, gene_name);
                             None
                         }
                     } else {
@@ -225,7 +224,6 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                         ),
                     )
                 } else {
-                    eprintln!("{} -- {} not found", name, gene_name);
                     (
                         (
                             String::new(),
@@ -283,7 +281,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
         }
     }
 
-    process(tree, 0, genes, colormap)
+    process(tree, tree.root(), genes, colormap)
 }
 
 pub fn render(t: &NewickTree, genes: &GeneCache, colormap: &ColorMap, out_filename: &str) {
