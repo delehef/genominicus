@@ -280,6 +280,7 @@ dependencies = [
  "maplit",
  "md5",
  "newick",
+ "once_cell",
  "palette",
  "petgraph",
  "rand",

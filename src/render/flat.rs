@@ -405,11 +405,29 @@ pub fn render(
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
     draw_background(
-        &mut svg, genes, depth, t, t.root(), 10.0, MARGIN_TOP, xlabels, width,
+        &mut svg,
+        genes,
+        depth,
+        t,
+        t.root(),
+        10.0,
+        MARGIN_TOP,
+        xlabels,
+        width,
     );
     let mut links = Vec::new();
     draw_tree(
-        &mut svg, genes, colormap, depth, t, t.root(), 10.0, MARGIN_TOP, xlabels, width, &mut links,
+        &mut svg,
+        genes,
+        colormap,
+        depth,
+        t,
+        t.root(),
+        10.0,
+        MARGIN_TOP,
+        xlabels,
+        width,
+        &mut links,
         render,
     );
     if render.links {

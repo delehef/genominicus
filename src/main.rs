@@ -51,10 +51,19 @@ struct Args {
 
     #[arg(long="annotations", value_delimiter = ',', value_parser=["links", "inner-nodes", "cs", "elc", "ellc"])]
     annotations: Vec<String>,
+
+    #[arg(
+        short = 'R',
+        long = "reference",
+        help = "whether the forest trees are annotated with genes or protein",
+        default_value = "gene"
+    )]
+    reference: String,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    utils::set_reference(&args.reference);
 
     let mut render_settings = RenderSettings::default();
     for annotation in args.annotations {
