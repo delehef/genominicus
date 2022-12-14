@@ -27,11 +27,7 @@ struct Args {
     )]
     species_tree: Option<String>,
 
-    #[arg(
-        short='D',
-        long="database",
-        required_if_eq_any([("graph_type", "barcode"), ("graph_type", "html"), ("graph_type", "flat")])
-    )]
+    #[arg(short = 'D', long = "database", required = true)]
     database: Option<String>,
 
     #[arg(
