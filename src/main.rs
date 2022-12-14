@@ -1,3 +1,4 @@
+use anyhow::*;
 use anyhow::{Context, Result};
 use clap::*;
 use colored::Colorize;
@@ -27,11 +28,7 @@ struct Args {
     )]
     species_tree: Option<String>,
 
-    #[arg(
-        short='D',
-        long="database",
-        required_if_eq_any([("graph_type", "barcode"), ("graph_type", "html"), ("graph_type", "flat")])
-    )]
+    #[arg(short = 'D', long = "database", required = true)]
     database: Option<String>,
 
     #[arg(
@@ -85,7 +82,17 @@ fn main() -> Result<()> {
         );
         let mut out_filename =
             std::path::PathBuf::from(args.out.clone().unwrap_or_else(|| filename.to_string()));
-        out_filename.set_file_name(out_filename.file_stem().unwrap().to_owned());
+        out_filename.set_file_name(
+            out_filename
+                .file_stem()
+                .with_context(|| {
+                    anyhow!(
+                        "invalid file name: {}",
+                        out_filename.to_str().unwrap().bold().yellow()
+                    )
+                })?
+                .to_owned(),
+        );
         let out_filename = out_filename.to_str().unwrap();
         let t = newick::one_from_filename(filename)
             .context(format!("failed to read `{}`", filename))?;
