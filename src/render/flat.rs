@@ -21,7 +21,7 @@ fn draw_background(
     let mut y = yoffset;
 
     let mut children = tree.children(node).to_vec();
-    children.sort_by_key(|c| tree[*c].data.name.as_deref().unwrap_or("Z"));
+    children.sort_by_key(|c| tree.name(*c).cloned().unwrap_or_else(|| "Z".to_string()));
 
     if children.is_empty() {
         return y + 20.;
@@ -116,7 +116,7 @@ fn draw_tree(
     let mut y = yoffset;
     let mut old_y = 0.;
     let mut children = tree[n].children().to_vec();
-    children.sort_by_key(|c| tree[*c].data.name.as_deref().unwrap_or("Z"));
+    children.sort_by_key(|c| tree.name(*c).cloned().unwrap_or_else(|| "Z".to_string()));
     if children.is_empty() {
         return y + 20.;
     }
@@ -148,8 +148,7 @@ fn draw_tree(
                 ])
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
-            if let Some(name) = tree[*child].data.name.as_ref() {
-                let gene_name = name.split('#').next().unwrap();
+            if let Some(gene_name) = tree.name(*child).as_ref() {
                 if let Some(DbGene {
                     ancestral,
                     species,
@@ -157,7 +156,7 @@ fn draw_tree(
                     left_tail,
                     right_tail,
                     ..
-                }) = genes.get(gene_name)
+                }) = genes.get(gene_name.as_str())
                 {
                     // Gene/protein name
                     svg.text()
@@ -225,8 +224,8 @@ fn draw_tree(
                     links.push((y, left_tail.to_vec(), ancestral.into(), right_tail.to_vec()));
                 } else {
                     // The node was not found in the database
-                    eprintln!("{} -- {} not found", name, gene_name);
-                    links.push((y, Vec::new(), name.into(), Vec::new()));
+                    eprintln!("{} not found", gene_name);
+                    links.push((y, Vec::new(), gene_name.to_string(), Vec::new()));
                 }
                 y += 20.;
             }
@@ -252,25 +251,16 @@ fn draw_tree(
     }
 
     if tree.is_duplication(n) {
-        let dcs = tree[n]
-            .data
-            .attrs
-            .get("DCS")
-            .and_then(|s| s.parse::<f32>().ok());
-        let elc = tree[n]
-            .data
-            .attrs
-            .get("ELC")
-            .and_then(|s| s.parse::<i32>().ok());
-        let ellc = tree[n]
-            .data
-            .attrs
+        let dcs = tree.attrs(n).get("DCS").and_then(|s| s.parse::<f32>().ok());
+        let elc = tree.attrs(n).get("ELC").and_then(|s| s.parse::<i32>().ok());
+        let ellc = tree
+            .attrs(n)
             .get("ELLC")
             .and_then(|s| s.parse::<i32>().ok());
 
         let pretty_dcs = dcs
             .map(|s| format!("{:2.0}%", (s * 100.)))
-            .unwrap_or("?".to_string());
+            .unwrap_or_else(|| "?".to_string());
         let pretty_elc = elc
             .map(|elc| {
                 if elc == 0 {
@@ -279,7 +269,7 @@ fn draw_tree(
                     format!("L:{}", elc)
                 }
             })
-            .unwrap_or("?".to_string());
+            .unwrap_or_else(|| "?".to_string());
         let pretty_ellc = ellc
             .map(|ellc| {
                 if ellc == 0 {
@@ -288,7 +278,7 @@ fn draw_tree(
                     format!("L:{}", ellc)
                 }
             })
-            .unwrap_or("?".to_string());
+            .unwrap_or_else(|| "?".to_string());
 
         let mut label_offset = 0.;
         for (doit, text) in [
@@ -319,7 +309,7 @@ fn draw_tree(
             .style(|s| s.fill_color(Some(StyleColor::Percent(0., 0., 0.))));
     }
     if render.inner_nodes {
-        tree[n].data.attrs.get("S").map(|name| {
+        tree.attrs(n).get("S").map(|name| {
             svg.text()
                 .pos(xoffset, yoffset - FONT_SIZE)
                 .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
@@ -387,7 +377,7 @@ pub fn render(
     let depth = BRANCH_WIDTH * (t.topological_depth().1 as f32 + 1.);
     let longest_name = (t.leaf_names().map(|name| name.len()).max().unwrap() as f32
         + t.leaves()
-            .map(|l| t[l].data.attrs.get("S").map(|s| s.len()).unwrap_or(0))
+            .map(|l| t.attrs(l).get("S").map(|s| s.len()).unwrap_or(0))
             .max()
             .unwrap() as f32
         + 20.)

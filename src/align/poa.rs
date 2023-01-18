@@ -146,7 +146,7 @@ impl POA {
                         .unwrap()
                         .nucs
                         .iter()
-                        .map(|(s, n)| ((*s, n.clone())))
+                        .map(|(s, n)| (*s, n.to_string()))
                         .collect(),
                 }),
             );

@@ -72,25 +72,13 @@ fn draw_tree(
     }
 
     if t.is_duplication(n) {
-        let dcs = t[n]
-            .data
-            .attrs
-            .get("DCS")
-            .and_then(|s| s.parse::<f32>().ok());
-        let elc = t[n]
-            .data
-            .attrs
-            .get("ELC")
-            .and_then(|s| s.parse::<i32>().ok());
-        let ellc = t[n]
-            .data
-            .attrs
-            .get("ELLC")
-            .and_then(|s| s.parse::<i32>().ok());
+        let dcs = t.attrs(n).get("DCS").and_then(|s| s.parse::<f32>().ok());
+        let elc = t.attrs(n).get("ELC").and_then(|s| s.parse::<i32>().ok());
+        let ellc = t.attrs(n).get("ELLC").and_then(|s| s.parse::<i32>().ok());
 
         let pretty_dcs = dcs
             .map(|s| format!("{:2.0}%", (s * 100.)))
-            .unwrap_or("?".to_string());
+            .unwrap_or_else(|| "?".to_string());
         let pretty_elc = elc
             .map(|elc| {
                 if elc == 0 {
@@ -99,7 +87,7 @@ fn draw_tree(
                     format!("L:{}", elc)
                 }
             })
-            .unwrap_or("?".to_string());
+            .unwrap_or_else(|| "?".to_string());
         let pretty_ellc = ellc
             .map(|ellc| {
                 if ellc == 0 {
@@ -108,7 +96,7 @@ fn draw_tree(
                     format!("L:{}", ellc)
                 }
             })
-            .unwrap_or("?".to_string());
+            .unwrap_or_else(|| "?".to_string());
 
         let mut label_offset = 0.;
         for (doit, text) in [
@@ -134,7 +122,7 @@ fn draw_tree(
             .from_pos_dims(xoffset - size / 2., yoffset - size / 2., size, size)
             .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
         if render.inner_nodes {
-            t[n].data.name.as_ref().map(|name| {
+            t.name(n).as_ref().map(|name| {
                 svg.text()
                     .pos(xoffset, yoffset - FONT_SIZE)
                     .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))

@@ -48,8 +48,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
             let tails = descendants
                 .iter()
                 .filter_map(|&d| {
-                    if let Some(name) = &tree[d].data.name {
-                        let gene_name = name.split('#').next().unwrap();
+                    if let Some(gene_name) = tree.name(d) {
                         if let Some(DbGene {
                             ancestral,
                             left_tail,
@@ -164,8 +163,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
         };
 
         let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
-            if let Some(name) = &tree[node].data.name {
-                let gene_name = name.split('#').next().unwrap();
+            if let Some(gene_name) = &tree.name(node) {
                 if let Some(DbGene {
                     ancestral,
                     species,
@@ -174,7 +172,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                     left_tail,
                     right_tail,
                     ..
-                }) = genes.get(gene_name)
+                }) = genes.get(gene_name.as_str())
                 {
                     common_ancestral = ancestral.to_owned();
                     let (proto_lefts, proto_rights) = (left_tail, right_tail);
@@ -187,7 +185,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                         (
                             species.to_owned(),
                             chr.to_owned(),
-                            gene_name.to_owned(),
+                            gene_name.to_string(),
                             ancestral.to_owned(),
                             *t_len,
                         ),
@@ -263,9 +261,8 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                 .map(|n| process(tree, *n, genes, colormap))
                 .collect(),
             is_duplication: tree.is_duplication(node),
-            confidence: tree[node]
-                .data
-                .attrs
+            confidence: tree
+                .attrs(node)
                 .get("DCS")
                 .and_then(|x| x.parse::<f32>().ok())
                 .unwrap_or(0.0),
@@ -303,13 +300,7 @@ pub fn render(t: &NewickTree, genes: &GeneCache, colormap: &ColorMap, out_filena
 
     let t_lens = t
         .leaves()
-        .filter_map(|n| {
-            t[n].data
-                .name
-                .as_ref()
-                .and_then(|name| name.split('#').next())
-                .and_then(|gene_name| genes.get(gene_name))
-        })
+        .filter_map(|n| t.name(n).and_then(|gene_name| genes.get(gene_name)))
         .map(|x| x.t_len)
         .filter(|&x| x >= 0)
         .collect::<Vec<_>>();

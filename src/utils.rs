@@ -23,24 +23,13 @@ pub const MARKER: &str = "=======FINAL=======";
 pub const INDEL: &str = "-";
 pub const EMPTY: &str = "";
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RenderSettings {
     pub inner_nodes: bool,
     pub cs: bool,
     pub elc: bool,
     pub ellc: bool,
     pub links: bool,
-}
-impl Default for RenderSettings {
-    fn default() -> Self {
-        RenderSettings {
-            inner_nodes: false,
-            cs: false,
-            elc: false,
-            ellc: false,
-            links: false,
-        }
-    }
 }
 
 pub struct DbGene {
@@ -204,7 +193,11 @@ fn tails(
 pub fn make_colormap(tree: &NewickTree, genes: &GeneCache) -> ColorMap {
     let mut colormap = ColorMap::new();
     for l in tree.leaves() {
-        if let Some(g) = tree[l].data.name.as_ref().and_then(|name| genes.get(name)) {
+        if let Some(g) = tree
+            .name(l)
+            .as_ref()
+            .and_then(|name| genes.get(name.as_str()))
+        {
             g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
                 colormap
                     .entry(g.to_string())
@@ -231,8 +224,8 @@ pub fn make_colormap_per_duplication(
         }
         let tails = leave_nodes
             .iter()
-            .filter_map(|l| t[*l].data.name.as_ref())
-            .filter_map(|name| genes.get(name))
+            .filter_map(|l| t.name(*l))
+            .filter_map(|name| genes.get(name.as_str()))
             .map(|g| {
                 g.left_tail
                     .iter()
@@ -322,7 +315,7 @@ pub fn make_colormap_per_duplication(
     rec_fill_colormap(tree, 0, genes, &mut colormap);
     if colorize_all {
         for l in tree.leaves() {
-            if let Some(g) = tree[l].data.name.as_ref().and_then(|name| genes.get(name)) {
+            if let Some(g) = tree.name(l).and_then(|name| genes.get(name.as_str())) {
                 g.left_tail.iter().chain(g.right_tail.iter()).for_each(|g| {
                     colormap
                         .entry(g.to_string())
@@ -343,7 +336,7 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
             // Chose a random leaf from the leaves featuring the longest tails as a reference
             let tails = leave_nodes
                 .iter()
-                .filter_map(|l| t[*l].data.name.as_ref())
+                .filter_map(|l| t.name(*l))
                 .filter_map(|name| genes.get(name))
                 .map(|g| (g.species.clone(), g.left_tail.clone(), g.right_tail.clone()))
                 .collect::<Vec<_>>();
@@ -376,7 +369,7 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
 
             leave_nodes
                 .iter()
-                .filter_map(|l| t[*l].data.name.as_ref())
+                .filter_map(|l| t.name(*l))
                 .for_each(|l_name| {
                     if let Some(gene) = genes.get_mut(l_name) {
                         let left_tail: HashSet<&String> = HashSet::from_iter(&gene.left_tail);
@@ -417,11 +410,11 @@ pub fn make_genes_cache(t: &NewickTree, db: &mut Connection) -> HashMap<String, 
 
     let mut r = t
         .leaves()
-        .filter_map(|n| t[n].data.name.as_ref())
+        .filter_map(|n| t.name(n))
         .map(|name| {
             (
                 name.to_owned(),
-                get_gene(db, name).expect(&format!("{} not found", &name)),
+                get_gene(db, name).unwrap_or_else(|_| panic!("{} not found", &name)),
             )
         })
         .collect();
