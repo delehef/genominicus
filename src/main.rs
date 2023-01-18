@@ -7,7 +7,6 @@ use rusqlite::*;
 use utils::*;
 
 mod align;
-mod dbmaker;
 mod render;
 mod utils;
 
@@ -115,7 +114,7 @@ fn main() -> Result<()> {
             id_type,
             id_pattern,
             species_pattern,
-        } => dbmaker::db_from_gffs(
+        } => syntesuite::dbmaker::db_from_gffs(
             &families,
             &gffs,
             &outfile,
