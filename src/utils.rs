@@ -90,7 +90,7 @@ pub fn gene2color<S: AsRef<str>>(name: S) -> StyleColor {
 
 pub fn set_reference(reference: &str) {
     ANCESTRAL_QUERY.set(format!(
-        "select gene, ancestral, species, chr, start, direction, left_tail_names, right_tail_names from genomes where {}=?", reference)).unwrap();
+        "select ancestral, species, chr, start, direction, left_tail_names, right_tail_names from genomes where {}=?", reference)).unwrap();
 }
 
 fn get_gene(db: &mut Connection, name: &str) -> std::result::Result<DbGene, rusqlite::Error> {

@@ -32,6 +32,14 @@ struct Args {
     database: Option<String>,
 
     #[arg(
+        short = 'I',
+        long = "id",
+        help = "the column name mapping to the IDs in the gene trees",
+        default_value = "id"
+    )]
+    reference: String,
+
+    #[arg(
         long = "colorize-per-duplication",
         help = "Introduce a new set of color gradients at each duplicated node"
     )]
@@ -48,14 +56,6 @@ struct Args {
 
     #[arg(long="annotations", value_delimiter = ',', value_parser=["links", "inner-nodes", "cs", "elc", "ellc"])]
     annotations: Vec<String>,
-
-    #[arg(
-        short = 'R',
-        long = "reference",
-        help = "whether the forest trees are annotated with genes or protein",
-        default_value = "gene"
-    )]
-    reference: String,
 }
 
 fn main() -> Result<()> {
