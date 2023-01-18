@@ -150,7 +150,6 @@ pub fn draw_duplications_blocks(
     species_tree: &NewickTree,
     species_map: &mut HashMap<String, (f32, f32)>,
     render: &RenderSettings,
-    my_offset: f32,
 ) -> (Group, HashMap<String, Vec<f32>>) {
     fn species_name(t: &NewickTree, n: usize) -> String {
         t[n].data.attrs["S"].to_string()
@@ -255,13 +254,12 @@ pub fn draw_duplications_blocks(
             }
         }
 
-        let mut label_offset = 0.;
+        let label_offset = 0.;
         if render.cs {
             out.text()
                 .pos(xoffset + 1.1 * label_offset * K, y_min)
                 .text(format!("DCS:{:.1}%", 100. * dcs))
                 .transform(|t| t.rotate_from(-45., xoffset, y_min));
-            label_offset += 1.;
         }
         // if render.elc {
         //     out.text()
@@ -307,13 +305,8 @@ pub fn render(
 
     let (tree_group, mut present_species_map) =
         draw_species_tree(&species_tree, &species_to_render, &present_species);
-    let (mut dups_group, dups_nodes) = draw_duplications_blocks(
-        t,
-        &species_tree,
-        &mut present_species_map,
-        render,
-        tree_group.bbox().x2,
-    );
+    let (mut dups_group, dups_nodes) =
+        draw_duplications_blocks(t, &species_tree, &mut present_species_map, render);
     dups_group.shift(tree_group.bbox().x2, 0.);
     draw_stripes(&mut svg, species_to_render.len(), dups_group.bbox().x2);
     svg.push(Box::new(tree_group));

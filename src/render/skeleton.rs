@@ -111,33 +111,24 @@ fn draw_tree(
             .unwrap_or("?".to_string());
 
         let mut label_offset = 0.;
-        if render.cs {
-            svg.text()
-                .pos(
-                    xoffset - FONT_SIZE,
-                    yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
-                )
-                .text(pretty_dcs);
-            label_offset += 1.;
+        for (doit, text) in [
+            (render.cs, pretty_dcs),
+            (render.elc, pretty_elc),
+            (render.ellc, pretty_ellc),
+        ]
+        .iter()
+        {
+            if *doit {
+                svg.text()
+                    .pos(
+                        xoffset - FONT_SIZE,
+                        yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
+                    )
+                    .text(text);
+                label_offset += 1.;
+            }
         }
-        if render.elc {
-            svg.text()
-                .pos(
-                    xoffset - FONT_SIZE,
-                    yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
-                )
-                .text(pretty_elc);
-            label_offset += 1.;
-        }
-        if render.ellc {
-            svg.text()
-                .pos(
-                    xoffset - FONT_SIZE,
-                    yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
-                )
-                .text(pretty_ellc);
-            label_offset += 1.;
-        }
+
         let dcs = dcs.unwrap_or(0.0);
         svg.polygon()
             .from_pos_dims(xoffset - size / 2., yoffset - size / 2., size, size)
