@@ -36,20 +36,20 @@ enum Commands {
         #[clap(long = "out", short = 'o')]
         outfile: String,
 
-        /// the directory containing the GFF3 files to process; those can be gzipped
+        /// the directory containing the genomes to process; those can be either in the GFF3 or BED format, and may be gzipped
         #[clap(long)]
-        gffs: Vec<String>,
+        genome_files: Vec<String>,
 
         /// the features to extract from GFF files
         #[clap(long, default_value_t = String::from("gene"))]
         id_type: String,
 
-        /// regex to extract feature name from GFF ID field; must contain a named capture group `id`
+        /// regex to extract feature name from either a GFF ID attribute or a BED name field; must contain a named capture group `id`
         #[clap(long, default_value_t = String::from("gene:(?P<id>.*)"))]
         id_pattern: String,
 
-        /// regex to extract species name from GFF file name; must contain a named capture group `species`
-        #[clap(long, default_value_t = String::from("(?P<species>.*).gff3"))]
+        /// regex to extract species name from genome files; must contain a named capture group `species`
+        #[clap(long, default_value_t = String::from("(?P<species>.*)\\.(gff3|bed)"))]
         species_pattern: String,
     },
     /// Render one or more gene trees, with their syntenic environment stored in the provided database
@@ -110,11 +110,11 @@ fn main() -> Result<()> {
         Commands::BuildDatabase {
             families,
             outfile,
-            gffs,
+            genome_files: gffs,
             id_type,
             id_pattern,
             species_pattern,
-        } => syntesuite::dbmaker::db_from_gffs(
+        } => syntesuite::dbmaker::db_from_files(
             &families,
             &gffs,
             &outfile,
