@@ -1152,9 +1152,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "svarog"
-version = "0.5.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53f502de997761a01d270ac86ef0dddad9ab2808da454b7186868fee1ec46c5f"
+checksum = "2a5c3cd594f96743d8e7a3734b77e47c3e2b50ca44750c6ba872fa96834259ba"
 dependencies = [
  "paste",
 ]

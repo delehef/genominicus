@@ -250,6 +250,54 @@ fn draw_tree(
         }
     }
 
+    let grafting_method = tree.attrs(n).get("METHOD").cloned().unwrap_or_default();
+    fn caret<'a>(
+        svg: &'a mut SvgDrawing,
+        xoffset: f32,
+        yoffset: f32,
+        w: f32,
+        dcs: Option<f32>,
+        method: &'a str,
+    ) {
+        match method {
+            "ELC" => {
+                let _ = svg.circle().x(xoffset).y(yoffset).radius(w).style(|s| {
+                    s.fill_color(Some(if let Some(dcs) = dcs {
+                        StyleColor::Percent(1.0 - dcs, dcs, 0.)
+                    } else {
+                        StyleColor::Percent(0., 0., 0.)
+                    }))
+                });
+            }
+            "SEQ" => {
+                let _ = svg
+                    .polygon()
+                    .from_pos_dims(xoffset, yoffset, w, w)
+                    .transform(|c| c.rotate(45.))
+                    .style(|s| {
+                        s.fill_color(Some(if let Some(dcs) = dcs {
+                            StyleColor::Percent(1.0 - dcs, dcs, 0.)
+                        } else {
+                            StyleColor::Percent(0., 0., 0.)
+                        }))
+                    });
+            }
+            "SYN" => {
+                let _ = svg
+                    .polygon()
+                    .from_pos_dims(xoffset, yoffset, w, w)
+                    .style(|s| {
+                        s.fill_color(Some(if let Some(dcs) = dcs {
+                            StyleColor::Percent(1.0 - dcs, dcs, 0.)
+                        } else {
+                            StyleColor::Percent(0., 0., 0.)
+                        }))
+                    });
+            }
+            _ => {}
+        };
+    }
+
     if tree.is_duplication(n) {
         let dcs = tree.attrs(n).get("DCS").and_then(|s| s.parse::<f32>().ok());
         let elc = tree.attrs(n).get("ELC").and_then(|s| s.parse::<i32>().ok());
@@ -299,15 +347,11 @@ fn draw_tree(
             }
         }
 
-        let dcs = dcs.unwrap_or(0.0);
-        svg.polygon()
-            .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
-            .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
+        caret(svg, xoffset - 3., yoffset - 3., 6., dcs, &grafting_method);
     } else if !tree[n].is_leaf() {
-        svg.polygon()
-            .from_pos_dims(xoffset - 3., yoffset - 3., 6., 6.)
-            .style(|s| s.fill_color(Some(StyleColor::Percent(0., 0., 0.))));
+        caret(svg, xoffset - 3., yoffset - 3., 6., None, &grafting_method);
     }
+
     if render.inner_nodes {
         tree.attrs(n).get("S").map(|name| {
             svg.text()
@@ -316,6 +360,7 @@ fn draw_tree(
                 .text(name)
         });
     }
+
     y
 }
 
