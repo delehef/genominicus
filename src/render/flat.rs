@@ -261,19 +261,24 @@ fn draw_tree(
     ) {
         match method {
             "ELC" => {
-                let _ = svg.circle().x(xoffset).y(yoffset).radius(w).style(|s| {
-                    s.fill_color(Some(if let Some(dcs) = dcs {
-                        StyleColor::Percent(1.0 - dcs, dcs, 0.)
-                    } else {
-                        StyleColor::Percent(0., 0., 0.)
-                    }))
-                });
+                let _ = svg
+                    .circle()
+                    .x(xoffset)
+                    .y(yoffset)
+                    .radius(w / 2.)
+                    .style(|s| {
+                        s.fill_color(Some(if let Some(dcs) = dcs {
+                            StyleColor::Percent(1.0 - dcs, dcs, 0.)
+                        } else {
+                            StyleColor::Percent(0., 0., 0.)
+                        }))
+                    });
             }
             "SEQ" => {
                 let _ = svg
                     .polygon()
-                    .from_pos_dims(xoffset, yoffset, w, w)
-                    .transform(|c| c.rotate(45.))
+                    .from_pos_dims(xoffset - w / 2., yoffset - w / 2., w, w)
+                    .transform(|c| c.rotate_from(45., xoffset, yoffset))
                     .style(|s| {
                         s.fill_color(Some(if let Some(dcs) = dcs {
                             StyleColor::Percent(1.0 - dcs, dcs, 0.)
@@ -285,7 +290,7 @@ fn draw_tree(
             "SYN" => {
                 let _ = svg
                     .polygon()
-                    .from_pos_dims(xoffset, yoffset, w, w)
+                    .from_pos_dims(xoffset - w / 2., yoffset - w / 2., w, w)
                     .style(|s| {
                         s.fill_color(Some(if let Some(dcs) = dcs {
                             StyleColor::Percent(1.0 - dcs, dcs, 0.)
@@ -347,9 +352,9 @@ fn draw_tree(
             }
         }
 
-        caret(svg, xoffset - 3., yoffset - 3., 6., dcs, &grafting_method);
+        caret(svg, xoffset, yoffset, 6., dcs, &grafting_method);
     } else if !tree[n].is_leaf() {
-        caret(svg, xoffset - 3., yoffset - 3., 6., None, &grafting_method);
+        caret(svg, xoffset, yoffset, 6., None, &grafting_method);
     }
 
     if render.inner_nodes {

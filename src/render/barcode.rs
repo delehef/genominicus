@@ -194,7 +194,7 @@ pub fn draw_duplications_blocks(
             // let elc_all = n.data.attrs["ELC"].parse::<i32>().unwrap();
             // let elc_large = n.data.attrs["ELLC"].parse::<i32>().unwrap();
 
-            let mrca = species_tree.mrca(&all_species).unwrap();
+            let mrca = species_tree.mrca(all_species).unwrap();
             (
                 arms,
                 t.attrs(n)["DCS"].parse::<f32>().unwrap_or_default(),
