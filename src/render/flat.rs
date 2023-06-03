@@ -299,7 +299,18 @@ fn draw_tree(
                         }))
                     });
             }
-            _ => {}
+            _ => {
+                if let Some(dcs) = dcs {
+                    let _ = svg
+                        .polygon()
+                        .from_pos_dims(xoffset - w / 2., yoffset - w / 2., w, w)
+                        .style(|s| {
+                            s.stroke_color(StyleColor::Percent(1.0 - dcs, dcs, 0.))
+                                .fill_color(None)
+                                .stroke_width(2.)
+                        });
+                }
+            }
         };
     }
 
