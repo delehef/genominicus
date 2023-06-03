@@ -81,11 +81,11 @@ enum Commands {
         id_column: String,
 
         /// If set, introduce a new set of color gradients at each duplication node
-        #[arg()]
+        #[arg(long)]
         colorize_per_duplication: bool,
 
         /// Ensure that all genes are colorized
-        #[arg()]
+        #[arg(long)]
         colorize_all: bool,
 
         /// Filter out species present in the species tree but not in the gene tree
