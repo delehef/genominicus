@@ -58,7 +58,8 @@ enum Commands {
         #[arg(required = true)]
         files: Vec<String>,
 
-        #[arg(short = 'o')]
+        /// Explicitely set an output file name
+        #[arg(short, long)]
         out: Option<String>,
 
         /// The database containing the syntenic environment of each gene, as built with `build-database`
@@ -95,6 +96,11 @@ enum Commands {
         /// Additional annotations to the plot
         #[arg(long="annotations", value_delimiter = ',', value_parser=["links", "inner-nodes", "cs", "elc", "ellc"])]
         annotations: Vec<String>,
+
+        /// Display the plot after creation. If a program name is passed, use it to open the plot; otherwise use
+        /// the system default
+        #[arg(short = 'O', long)]
+        open: Option<Option<String>>,
     },
 }
 
@@ -134,6 +140,7 @@ fn main() -> Result<()> {
             colorize_all,
             filter_species_tree,
             annotations,
+            open,
         } => {
             utils::set_reference(&id_column);
 
@@ -171,7 +178,7 @@ fn main() -> Result<()> {
                 let out_filename = out_filename.to_str().unwrap();
                 let t = newick::one_from_filename(filename)
                     .context(format!("failed to read `{}`", filename))?;
-                match graph_type.as_str() {
+                let out = match graph_type.as_str() {
                     "flat" => {
                         let mut db = Connection::open_with_flags(
                             &database,
@@ -184,13 +191,9 @@ fn main() -> Result<()> {
                         } else {
                             make_colormap(&t, &genes)
                         };
-                        render::flat::render(
-                            &t,
-                            &genes,
-                            &colormap,
-                            &format!("{}-flat.svg", out_filename),
-                            &render_settings,
-                        );
+                        let out = format!("{}-flat.svg", out_filename);
+                        render::flat::render(&t, &genes, &colormap, &out, &render_settings);
+                        out
                     }
                     "html" => {
                         let mut db = Connection::open_with_flags(
@@ -204,30 +207,34 @@ fn main() -> Result<()> {
                         } else {
                             make_colormap(&t, &genes)
                         };
-                        render::html::render(
-                            &t,
-                            &genes,
-                            &colormap,
-                            &format!("{}.html", out_filename),
-                        )
+                        let out = format!("{}.html", out_filename);
+                        render::html::render(&t, &genes, &colormap, &out);
+                        out
                     }
                     "barcode" => {
+                        let out = format!("{}-barcode.svg", out_filename);
                         render::barcode::render(
                             &t,
                             species_tree.as_ref().unwrap(),
-                            &format!("{}-barcode.svg", out_filename),
+                            &out,
                             filter_species_tree,
                             &render_settings,
                         );
+                        out
                     }
                     "skeleton" => {
-                        render::skeleton::render(
-                            &t,
-                            &format!("{}-skeleton.svg", out_filename),
-                            &render_settings,
-                        );
+                        let out = format!("{}-skeleton.svg", out_filename);
+                        render::skeleton::render(&t, &out, &render_settings);
+                        out
                     }
                     _ => unimplemented!(),
+                };
+                if let Some(open_with) = open.as_ref() {
+                    if let Some(program) = open_with.as_ref() {
+                        open::with(&out, program)?;
+                    } else {
+                        open::that(&out)?;
+                    };
                 };
             }
             Ok(())
