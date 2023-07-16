@@ -491,6 +491,7 @@ dependencies = [
  "open",
  "palette",
  "petgraph",
+ "petname",
  "rand",
  "regex",
  "rusqlite",
@@ -801,9 +802,9 @@ dependencies = [
 
 [[package]]
 name = "os_str_bytes"
-version = "6.5.0"
+version = "6.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceedf44fb00f2d1984b0bc98102627ce622e083e49a5bacdb3e514fa4238e267"
+checksum = "4d5d9eb14b174ee9aa2ef96dc2b94637a2d4b6e7cb873c7e171f0c20c6cf3eac"
 
 [[package]]
 name = "palette"
@@ -1209,14 +1210,12 @@ dependencies = [
 
 [[package]]
 name = "syntesuite"
-version = "0.2.2"
-source = "git+https://github.com/delehef/syntesuite#d0fc8e7e27d287bc27a260c3fabc91586f444fd1"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "colored",
  "flate2",
  "log",
- "petname",
  "regex",
  "rusqlite",
  "thiserror",

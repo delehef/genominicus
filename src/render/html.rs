@@ -6,21 +6,22 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
+use syntesuite::genebook::Gene;
 
 #[derive(Serialize, Deserialize)]
 struct PolyGene {
-    genes: Vec<(Gene, f32)>,
+    genes: Vec<(HtmlGene, f32)>,
 }
 #[derive(Serialize, Deserialize)]
-struct Gene {
+struct HtmlGene {
     color: String,
     name: String,
 }
 #[derive(Serialize, Deserialize)]
 struct Landscape {
-    lefts: Vec<Gene>,
-    me: Gene,
-    rights: Vec<Gene>,
+    lefts: Vec<HtmlGene>,
+    me: HtmlGene,
+    rights: Vec<HtmlGene>,
 }
 #[derive(Serialize, Deserialize)]
 struct HtmlNode {
@@ -28,7 +29,6 @@ struct HtmlNode {
     chr: String,
     gene: String,
     ancestral: String,
-    t_len: i32,
     color: String,
     children: Vec<HtmlNode>,
 
@@ -42,30 +42,30 @@ struct HtmlNode {
 fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
     fn process(tree: &NewickTree, node: usize, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
         let descendants = tree.descendants(node);
-        let mut common_ancestral = String::new();
+        let mut common_ancestral = 0;
         let clustered = {
             // Node ID to tail mapping
             let tails = descendants
                 .iter()
                 .filter_map(|&d| {
                     if let Some(gene_name) = tree.name(d) {
-                        if let Some(DbGene {
-                            ancestral,
-                            left_tail,
-                            right_tail,
+                        if let Some(Gene {
+                            family,
+                            left_landscape,
+                            right_landscape,
                             ..
                         }) = genes.get(gene_name)
                         {
-                            common_ancestral = ancestral.to_owned();
+                            common_ancestral = *family;
                             Some((
                                 d,
-                                left_tail
+                                left_landscape
                                     .iter()
+                                    .map(|tg| PoaElt::Gene(tg.family))
                                     .rev() // XXX Pour que les POA partent bien du bout
-                                    .chain([MARKER.to_owned()].iter())
-                                    .chain(right_tail.iter())
-                                    .cloned()
-                                    .collect::<Vec<String>>(),
+                                    .chain(std::iter::once(PoaElt::Marker))
+                                    .chain(right_landscape.iter().map(|tg| PoaElt::Gene(tg.family)))
+                                    .collect::<Vec<_>>(),
                             ))
                         } else {
                             None
@@ -84,21 +84,10 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                     .collect::<Vec<_>>();
                 if false {
                     // Differentiate between tail of shorter alignments and actual indels
-                    // Left tail
                     alignment.iter_mut().for_each(|a| {
                         for pos in a.iter_mut() {
-                            if pos == INDEL {
-                                *pos = "".to_string();
-                            } else {
-                                break;
-                            }
-                        }
-                    });
-                    // Right tail
-                    alignment.iter_mut().for_each(|a| {
-                        for pos in a.iter_mut().rev() {
-                            if pos == INDEL {
-                                *pos = "".to_string();
+                            if *pos == PoaElt::Indel {
+                                *pos = PoaElt::Empty;
                             } else {
                                 break;
                             }
@@ -114,12 +103,12 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                             //     print!(" {:<18} ", kkk);
                             // }
                             let count = if false {
-                                alignment.iter().filter(|a| a[i] != EMPTY).count() as f32
+                                alignment.iter().filter(|a| a[i] != PoaElt::Empty).count() as f32
                             } else {
                                 alignment.len() as f32
                             };
 
-                            let mut counts: HashMap<String, i32> = HashMap::new();
+                            let mut counts: HashMap<PoaElt, i32> = HashMap::new();
                             alignment
                                 .iter()
                                 .map(|a| &a[i])
@@ -131,28 +120,30 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                                         // if DROP_EMPTY && (name == EMPTY || name == INDEL) {
                                         //     None
                                         // } else {
-                                        let name = if name != MARKER {
-                                            &name
+                                        let name = if name != PoaElt::Marker {
+                                            name
                                         } else {
-                                            &common_ancestral
+                                            PoaElt::Gene(common_ancestral)
                                         };
                                         Some((
-                                            Gene {
-                                                name: name.clone(),
-                                                color: if name == EMPTY || name == INDEL {
-                                                    "#ccc".to_string()
-                                                } else {
-                                                    colormap
-                                                        .get(&name.clone())
+                                            HtmlGene {
+                                                name: name.to_string(),
+                                                color: match name {
+                                                    PoaElt::Gene(family) => colormap
+                                                        .get(&family)
                                                         .map(|c| c.to_hex_string())
-                                                        .unwrap_or_else(|| "#aaa".to_string())
+                                                        .unwrap_or_else(|| "#aaa".to_string()),
+                                                    PoaElt::Marker => todo!(),
+                                                    PoaElt::Indel | PoaElt::Empty => {
+                                                        "#ccc".to_string()
+                                                    }
                                                 },
                                             },
                                             v as f32 / count,
                                         ))
                                         // }
                                     })
-                                    .collect::<Vec<(Gene, f32)>>(),
+                                    .collect::<Vec<(HtmlGene, f32)>>(),
                             }
                         })
                         .collect::<Vec<PolyGene>>(),
@@ -162,20 +153,19 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
             }
         };
 
-        let ((species, chr, gene, ancestral, t_len), (lefts, rights)) =
+        let ((species, chr, gene, ancestral), (lefts, rights)) =
             if let Some(gene_name) = &tree.name(node) {
-                if let Some(DbGene {
-                    ancestral,
+                if let Some(Gene {
+                    family,
                     species,
                     chr,
-                    t_len,
-                    left_tail,
-                    right_tail,
+                    left_landscape,
+                    right_landscape,
                     ..
                 }) = genes.get(gene_name.as_str())
                 {
-                    common_ancestral = ancestral.to_owned();
-                    let (proto_lefts, proto_rights) = (left_tail, right_tail);
+                    common_ancestral = *family;
+                    let (proto_lefts, proto_rights) = (left_landscape, right_landscape);
                     let (lefts, rights) = if true {
                         (proto_rights, proto_lefts)
                     } else {
@@ -186,62 +176,41 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                             species.to_owned(),
                             chr.to_owned(),
                             gene_name.to_string(),
-                            ancestral.to_owned(),
-                            *t_len,
+                            *family,
                         ),
                         (
                             lefts
                                 .iter()
                                 .rev()
-                                .map(|g| Gene {
-                                    name: g.clone(),
-                                    color: if g == EMPTY {
-                                        "#111".into()
-                                    } else {
-                                        colormap
-                                            .get(&g.clone())
-                                            .map(|c| c.to_hex_string())
-                                            .unwrap_or_else(|| "#aaa".to_string())
-                                    },
+                                .map(|g| HtmlGene {
+                                    name: g.family.to_string(),
+                                    color: colormap
+                                        .get(&g.family)
+                                        .map(|c| c.to_hex_string())
+                                        .unwrap_or_else(|| "#aaa".to_string()),
                                 })
                                 .collect::<Vec<_>>(),
                             rights
                                 .iter()
-                                .map(|g| Gene {
-                                    name: g.clone(),
-                                    color: if g == EMPTY {
-                                        "#111".into()
-                                    } else {
-                                        colormap
-                                            .get(&g.clone())
-                                            .map(|c| c.to_hex_string())
-                                            .unwrap_or_else(|| "#aaa".to_string())
-                                    },
+                                .map(|g| HtmlGene {
+                                    name: g.family.to_string(),
+                                    color: colormap
+                                        .get(&g.family)
+                                        .map(|c| c.to_hex_string())
+                                        .unwrap_or_else(|| "#aaa".to_string()),
                                 })
                                 .collect::<Vec<_>>(),
                         ),
                     )
                 } else {
                     (
-                        (
-                            String::new(),
-                            String::new(),
-                            String::new(),
-                            String::new(),
-                            0,
-                        ),
+                        (String::new(), String::new(), String::new(), 0),
                         (vec![], vec![]),
                     )
                 }
             } else {
                 (
-                    (
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        0,
-                    ),
+                    (String::new(), String::new(), String::new(), 0),
                     (vec![], vec![]),
                 )
             };
@@ -251,8 +220,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
             species,
             chr,
             gene,
-            ancestral,
-            t_len,
+            ancestral: ancestral.to_string(), // FIXME: random name
             color,
             children: tree[node]
                 .children()
@@ -269,9 +237,9 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
             repr: Landscape {
                 lefts,
                 rights,
-                me: Gene {
-                    color: gene2color(&common_ancestral).to_hex_string(),
-                    name: common_ancestral,
+                me: HtmlGene {
+                    color: gene2color(&common_ancestral.to_ne_bytes()).to_hex_string(),
+                    name: common_ancestral.to_string(),
                 },
             },
             clustered,
@@ -292,30 +260,15 @@ pub fn render(t: &NewickTree, genes: &GeneCache, colormap: &ColorMap, out_filena
         title: &'a str,
         comment: &'a str,
 
-        min_t_len: &'a i32,
-        max_t_len: &'a i32,
-
         data: &'a str,
     }
-
-    let t_lens = t
-        .leaves()
-        .filter_map(|n| t.name(n).and_then(|gene_name| genes.get(gene_name)))
-        .map(|x| x.t_len)
-        .filter(|&x| x >= 0)
-        .collect::<Vec<_>>();
-
-    let min_t_len = t_lens.iter().min().unwrap_or(&0);
-    let max_t_len = t_lens.iter().max().unwrap_or(&0);
 
     let html = GenominicusTemplate {
         css: include_str!("../../templates/genominicus.css"),
         js_genominicus: include_str!("../../templates/genominicus.js"),
         js_svg: include_str!("../../templates/svg.min.js"),
         title: out_filename,
-        comment: &format!("Transcript length: {} to {}", min_t_len, max_t_len),
-        min_t_len,
-        max_t_len,
+        comment: "".into(),
         data: &serde_json::to_string_pretty(&draw_html(t, genes, colormap)).unwrap(),
     };
     let mut out = File::create(out_filename).unwrap();

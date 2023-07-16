@@ -15,7 +15,7 @@ const SIMDW: usize = 8;
 const NEG_INF: i32 = -3_000_000;
 
 pub type SeqID = usize;
-pub type Nucleotide = String;
+pub type Nucleotide = PoaElt;
 pub type Sequence = Vec<Nucleotide>;
 pub type Sequences = HashMap<SeqID, Sequence>;
 
@@ -176,7 +176,7 @@ fn build_matrix(
         for j in 1..m_width {
             H[row + j] = H[pred_row + j - 1]
                 + if nucs[node_id.index()].contains(&seq[j - 1]) {
-                    if seq[j - 1] == MARKER {
+                    if seq[j - 1] == PoaElt::Marker {
                         100
                     } else {
                         m
@@ -197,7 +197,7 @@ fn build_matrix(
                     H[row + j],
                     H[pred_row + j - 1]
                         + if nucs[node_id.index()].contains(&seq[j - 1]) {
-                            if seq[j - 1] == MARKER {
+                            if seq[j - 1] == PoaElt::Marker {
                                 100
                             } else {
                                 m
@@ -233,7 +233,7 @@ fn print_matrix(
 
     print!("                    ");
     for j in 1..m_width {
-        print!("{:>20}", nuc_to_str(&seq[j - 1]));
+        print!("{:>20}", seq[j - 1]);
     }
     println!();
 
@@ -245,7 +245,7 @@ fn print_matrix(
                 g[ranks_to_nodes[i - 1]]
                     .nucs
                     .values()
-                    .map(|x| nuc_to_str(x))
+                    .map(|x| x.to_string())
                     .collect::<Vec<_>>()
                     .join(" ")
             );
@@ -341,7 +341,7 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
 
             // ...first in the directly preceding node...
             let match_cost = if nucs[node_id.index()].contains(&seq[j - 1]) {
-                if seq[j - 1] == MARKER {
+                if seq[j - 1] == PoaElt::Marker {
                     100
                 } else {
                     m
@@ -516,7 +516,7 @@ pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
     (g, starts)
 }
 
-pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, Vec<String>> {
+pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, Vec<PoaElt>> {
     let nodes = petgraph::algo::toposort(g, None).ok().unwrap();
     let rank_to_column = nodes
         .iter()
@@ -527,12 +527,12 @@ pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, Vec<String
     starts
         .iter()
         .map(|(seq_id, start)| {
-            let mut seq_out = vec!["-".to_owned(); nodes.len()];
+            let mut seq_out = vec![PoaElt::Indel; nodes.len()];
             let mut node = *start;
 
             loop {
                 let nucs = &g[node].nucs;
-                seq_out[rank_to_column[&node]] = nuc_to_str(&nucs[seq_id]);
+                seq_out[rank_to_column[&node]] = nucs[seq_id];
 
                 if let Some(next) = g
                     .edges_directed(node, Direction::Outgoing)

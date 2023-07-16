@@ -92,15 +92,6 @@ function insertAt(it, root, depth, borderColor="") {
         locus.appendChild(document.createTextNode(it.species + "/" + it.chr))
         locus.href = "https://www.genomicus.bio.ens.psl.eu/genomicus-104.02/cgi-bin/search.pl?query="+it.gene+"&view=default&nocache=$random"
         links.appendChild(locus);
-
-        if (it.t_len > 0) {
-            let pcent = 100*it.t_len/(max_t_len - min_t_len);
-            var t_len = document.createElement("span");
-            t_len.classList.add("nametag");
-            t_len.style.color = `rgb(${(100 - pcent)*2.56}, ${pcent*2.56}, 0)`;
-            t_len.appendChild(document.createTextNode(it.t_len + "AA"))
-            links.appendChild(t_len);
-        }
     }
     if (it.clustered) {
         div.classList.add("node-container")

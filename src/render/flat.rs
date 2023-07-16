@@ -4,6 +4,9 @@ use std::io::prelude::*;
 use crate::utils::*;
 use newick::*;
 use svarog::*;
+use syntesuite::genebook::FamilyID;
+use syntesuite::genebook::Gene;
+use syntesuite::Strand;
 
 const MARGIN_TOP: f32 = 100.0;
 
@@ -62,29 +65,18 @@ fn draw_background(
     }
     y
 }
+
 fn draw_gene<'a>(
     svg: &'a mut SvgDrawing,
     x: f32,
     y: f32,
-    right: bool,
+    strand: Strand,
     color: &StyleColor,
     name: &str,
 ) -> &'a mut Polygon {
-    if right {
-        svg.polygon()
-            .add_point(x, y - 5.)
-            .add_point(x + GENE_WIDTH - 3., y - 5.)
-            .add_point(x + GENE_WIDTH, y)
-            .add_point(x + GENE_WIDTH - 3., y + 5.)
-            .add_point(x, y + 5.)
-            .set_hover(name)
-            .style(|s| {
-                s.fill_color(Some(color.clone()))
-                    .stroke_width(0.5)
-                    .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
-            })
-    } else {
-        svg.polygon()
+    match strand {
+        Strand::Direct => svg
+            .polygon()
             .add_point(x, y)
             .add_point(x + 3., y - 5.)
             .add_point(x + GENE_WIDTH, y - 5.)
@@ -95,7 +87,32 @@ fn draw_gene<'a>(
                 s.fill_color(Some(color.clone()))
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
-            })
+            }),
+        Strand::Reverse => svg
+            .polygon()
+            .add_point(x, y - 5.)
+            .add_point(x + GENE_WIDTH - 3., y - 5.)
+            .add_point(x + GENE_WIDTH, y)
+            .add_point(x + GENE_WIDTH - 3., y + 5.)
+            .add_point(x, y + 5.)
+            .set_hover(name)
+            .style(|s| {
+                s.fill_color(Some(color.clone()))
+                    .stroke_width(0.5)
+                    .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
+            }),
+        Strand::Unknown => svg
+            .polygon()
+            .add_point(x + 1.5, y - 5.)
+            .add_point(x + GENE_WIDTH - 1.5, y - 5.)
+            .add_point(x + GENE_WIDTH - 1.5, y + 5.)
+            .add_point(x + 1.5, y + 5.)
+            .set_hover(name)
+            .style(|s| {
+                s.fill_color(Some(color.clone()))
+                    .stroke_width(0.5)
+                    .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
+            }),
     }
 }
 
@@ -103,6 +120,7 @@ fn draw_tree(
     svg: &mut SvgDrawing,
     genes: &GeneCache,
     colormap: &ColorMap,
+    petmap: &PetnameMap,
     depth: f32,
     tree: &NewickTree,
     n: usize,
@@ -110,7 +128,7 @@ fn draw_tree(
     yoffset: f32,
     xlabels: f32,
     width: f32,
-    links: &mut Vec<(f32, Vec<String>, String, Vec<String>)>,
+    links: &mut Vec<(f32, Vec<FamilyID>, FamilyID, Vec<FamilyID>)>,
     render: &RenderSettings,
 ) -> f32 {
     let mut y = yoffset;
@@ -149,12 +167,13 @@ fn draw_tree(
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             if let Some(gene_name) = tree.name(*child).as_ref() {
-                if let Some(DbGene {
-                    ancestral,
+                if let Some(Gene {
+                    family,
                     species,
                     chr,
-                    left_tail,
-                    right_tail,
+                    strand,
+                    left_landscape,
+                    right_landscape,
                     ..
                 }) = genes.get(gene_name.as_str())
                 {
@@ -166,19 +185,19 @@ fn draw_tree(
 
                     // Left tail
                     let xbase = xlabels + (WINDOW as f32 - 1.) * (GENE_WIDTH + GENE_SPACING);
-                    for (k, g) in left_tail.iter().enumerate() {
+                    for (k, tg) in left_landscape.iter().enumerate() {
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
                         let drawn = draw_gene(
                             svg,
                             xstart,
                             y,
-                            true,
+                            tg.strand,
                             colormap
-                                .get(&g.clone())
+                                .get(&tg.family)
                                 .unwrap_or(&StyleColor::String("#aaa".to_string())),
-                            g,
+                            &petmap[&tg.family],
                         );
-                        if g == ancestral {
+                        if tg.family == *family {
                             drawn.style(|s| {
                                 s.stroke_width(2.)
                                     .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
@@ -191,9 +210,9 @@ fn draw_tree(
                         svg,
                         xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
                         y,
-                        true,
-                        &gene2color(&ancestral),
-                        ancestral,
+                        *strand,
+                        &gene2color(&family.to_ne_bytes()),
+                        &petmap[&family],
                     )
                     .style(|s| {
                         s.stroke_width(2.)
@@ -202,30 +221,41 @@ fn draw_tree(
 
                     // Right tail
                     let xbase = xlabels + (WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING);
-                    for (k, g) in right_tail.iter().enumerate() {
+                    for (k, tg) in right_landscape.iter().enumerate() {
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
                         let drawn = draw_gene(
                             svg,
                             xstart,
                             y,
-                            true, // g.1.to_string() == direction,
+                            tg.strand,
                             colormap
-                                .get(&g.clone())
+                                .get(&tg.family)
                                 .unwrap_or(&StyleColor::String("#aaa".to_string())),
-                            g,
+                            &petmap[&tg.family],
                         );
-                        if g == ancestral {
+                        if tg.family == *family {
                             drawn.style(|s| {
                                 s.stroke_width(2.)
                                     .stroke_color(StyleColor::Percent(0.1, 0.1, 0.1))
                             });
                         }
                     }
-                    links.push((y, left_tail.to_vec(), ancestral.into(), right_tail.to_vec()));
+                    links.push((
+                        y,
+                        left_landscape
+                            .iter()
+                            .map(|tg| tg.family)
+                            .collect::<Vec<_>>(),
+                        *family,
+                        right_landscape
+                            .iter()
+                            .map(|tg| tg.family)
+                            .collect::<Vec<_>>(),
+                    ));
                 } else {
                     // The node was not found in the database
                     eprintln!("{} not found", gene_name);
-                    links.push((y, Vec::new(), gene_name.to_string(), Vec::new()));
+                    links.push((y, Vec::new(), 0, Vec::new()));
                 }
                 y += 20.;
             }
@@ -237,6 +267,7 @@ fn draw_tree(
                 svg,
                 genes,
                 colormap,
+                petmap,
                 depth,
                 tree,
                 *child,
@@ -382,7 +413,7 @@ fn draw_tree(
 
 fn draw_links(
     svg: &mut SvgDrawing,
-    links: &[(f32, Vec<String>, String, Vec<String>)],
+    links: &[(f32, Vec<FamilyID>, FamilyID, Vec<FamilyID>)],
     xlabels: f32,
 ) {
     for w in links.windows(2) {
@@ -432,6 +463,7 @@ pub fn render(
     t: &NewickTree,
     genes: &GeneCache,
     colormap: &ColorMap,
+    petmap: &PetnameMap,
     out_filename: &str,
     render: &RenderSettings,
 ) {
@@ -462,6 +494,7 @@ pub fn render(
         &mut svg,
         genes,
         colormap,
+        petmap,
         depth,
         t,
         t.root(),

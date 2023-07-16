@@ -3,7 +3,6 @@ use anyhow::{Context, Result};
 use clap::*;
 use colored::Colorize;
 use log::*;
-use rusqlite::*;
 use utils::*;
 
 mod align;
@@ -142,8 +141,6 @@ fn main() -> Result<()> {
             annotations,
             open,
         } => {
-            utils::set_reference(&id_column);
-
             let mut render_settings = RenderSettings::default();
             for annotation in annotations {
                 match annotation.as_str() {
@@ -180,28 +177,26 @@ fn main() -> Result<()> {
                     .context(format!("failed to read `{}`", filename))?;
                 let out = match graph_type.as_str() {
                     "flat" => {
-                        let mut db = Connection::open_with_flags(
-                            &database,
-                            OpenFlags::SQLITE_OPEN_READ_ONLY,
-                        )
-                        .unwrap();
-                        let genes = make_genes_cache(&t, &mut db);
+                        let genes = make_genes_cache(&t, &database, &id_column)?;
                         let colormap = if colorize_per_duplication {
                             make_colormap_per_duplication(&t, &genes, colorize_all)
                         } else {
                             make_colormap(&t, &genes)
                         };
+                        let petmap = make_petnamemap(&t, &genes);
                         let out = format!("{}-flat.svg", out_filename);
-                        render::flat::render(&t, &genes, &colormap, &out, &render_settings);
+                        render::flat::render(
+                            &t,
+                            &genes,
+                            &colormap,
+                            &petmap,
+                            &out,
+                            &render_settings,
+                        );
                         out
                     }
                     "html" => {
-                        let mut db = Connection::open_with_flags(
-                            &database,
-                            OpenFlags::SQLITE_OPEN_READ_ONLY,
-                        )
-                        .unwrap();
-                        let genes = make_genes_cache(&t, &mut db);
+                        let genes = make_genes_cache(&t, &database, &id_column)?;
                         let colormap = if colorize_per_duplication {
                             make_colormap_per_duplication(&t, &genes, colorize_all)
                         } else {
