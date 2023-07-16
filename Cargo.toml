@@ -3,6 +3,9 @@ name = "genominicus"
 version = "0.1.0"
 authors = ["Franklin Delehelle <delehelle@ens.fr>"]
 edition = "2021"
+license = "CECILL-2.1"
+description = "A tool to plot gene trees"
+repository = "https://github.com/delehef/genominicus"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
