@@ -158,7 +158,6 @@ pub fn draw_duplications_blocks(
         .inners()
         .filter(|&n| t.is_duplication(n))
         .map(|n| {
-            // assert!(children.len() == 2, "has {} children", children.len());
             let arms = t[n]
                 .children()
                 .iter()

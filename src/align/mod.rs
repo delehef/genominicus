@@ -40,7 +40,7 @@ fn insert_hanging_seq(
 
     for n in seq.iter() {
         let node = g.add_node(POANode {
-            nucs: hashmap! {seq_id => n.clone()},
+            nucs: hashmap! {seq_id => *n},
         });
         if first_node.is_none() {
             first_node = Some(node)
@@ -99,11 +99,11 @@ fn add_alignment(
         let new_node = if graph_id.is_none() {
             // Not aligned, create a new node
             g.add_node(POANode {
-                nucs: hashmap! {seq_id => n.clone()},
+                nucs: hashmap! {seq_id => *n},
             })
         } else {
             // Aligned, add our nuc if necessary, and graft us on the edge
-            g[graph_id.unwrap()].nucs.insert(seq_id, n.clone());
+            g[graph_id.unwrap()].nucs.insert(seq_id, *n);
             // Add edge
             graph_id.unwrap()
         };

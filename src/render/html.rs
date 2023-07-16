@@ -112,7 +112,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                             alignment
                                 .iter()
                                 .map(|a| &a[i])
-                                .for_each(|g| *counts.entry(g.clone()).or_insert(0) += 1);
+                                .for_each(|g| *counts.entry(*g).or_insert(0) += 1);
                             PolyGene {
                                 genes: counts
                                     .into_iter()
@@ -268,7 +268,7 @@ pub fn render(t: &NewickTree, genes: &GeneCache, colormap: &ColorMap, out_filena
         js_genominicus: include_str!("../../templates/genominicus.js"),
         js_svg: include_str!("../../templates/svg.min.js"),
         title: out_filename,
-        comment: "".into(),
+        comment: "",
         data: &serde_json::to_string_pretty(&draw_html(t, genes, colormap)).unwrap(),
     };
     let mut out = File::create(out_filename).unwrap();

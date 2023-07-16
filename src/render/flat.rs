@@ -12,13 +12,11 @@ const MARGIN_TOP: f32 = 100.0;
 
 fn draw_background(
     svg: &mut SvgDrawing,
-    genes: &GeneCache,
     depth: f32,
     tree: &NewickTree,
     node: usize,
     xoffset: f32,
     yoffset: f32,
-    xlabels: f32,
     width: f32,
 ) -> f32 {
     let mut y = yoffset;
@@ -34,17 +32,7 @@ fn draw_background(
         let new_y = if tree[child].is_leaf() {
             y + 20.
         } else {
-            draw_background(
-                svg,
-                genes,
-                depth,
-                tree,
-                child,
-                xoffset + BRANCH_WIDTH,
-                y,
-                xlabels,
-                width,
-            )
+            draw_background(svg, depth, tree, child, xoffset + BRANCH_WIDTH, y, width)
         };
 
         if tree.is_duplication(node) {
@@ -127,7 +115,6 @@ fn draw_tree(
     xoffset: f32,
     yoffset: f32,
     xlabels: f32,
-    width: f32,
     links: &mut Vec<(f32, Vec<FamilyID>, FamilyID, Vec<FamilyID>)>,
     render: &RenderSettings,
 ) -> f32 {
@@ -212,7 +199,7 @@ fn draw_tree(
                         y,
                         *strand,
                         &gene2color(&family.to_ne_bytes()),
-                        &petmap[&family],
+                        &petmap[family],
                     )
                     .style(|s| {
                         s.stroke_width(2.)
@@ -274,7 +261,6 @@ fn draw_tree(
                 xoffset + BRANCH_WIDTH,
                 y,
                 xlabels,
-                width,
                 links,
                 render,
             );
@@ -478,17 +464,7 @@ pub fn render(
     let xlabels = 0.85 * (10. + depth + longest_name + 20.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
-    draw_background(
-        &mut svg,
-        genes,
-        depth,
-        t,
-        t.root(),
-        10.0,
-        MARGIN_TOP,
-        xlabels,
-        width,
-    );
+    draw_background(&mut svg, depth, t, t.root(), 10.0, MARGIN_TOP, width);
     let mut links = Vec::new();
     draw_tree(
         &mut svg,
@@ -501,7 +477,6 @@ pub fn render(
         10.0,
         MARGIN_TOP,
         xlabels,
-        width,
         &mut links,
         render,
     );
