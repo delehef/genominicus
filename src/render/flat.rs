@@ -21,7 +21,7 @@ fn draw_background(
 ) -> f32 {
     let mut y = yoffset;
 
-    let mut children = tree.children(node).to_vec();
+    let mut children = tree.children(node).unwrap().to_vec();
     children.sort_by_key(|c| tree.name(*c).cloned().unwrap_or_else(|| "Z".to_string()));
 
     if children.is_empty() {
