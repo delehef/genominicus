@@ -93,7 +93,7 @@ enum Commands {
         filter_species_tree: bool,
 
         /// Additional annotations to the plot
-        #[arg(long="annotations", value_delimiter = ',', value_parser=["links", "inner-nodes", "cs", "elc", "ellc"])]
+        #[arg(long="annotations", value_delimiter = ',', value_parser=["links", "inner-nodes", "cs", "elc", "ellc", "dids"])]
         annotations: Vec<String>,
 
         /// Display the plot after creation. If a program name is passed, use it to open the plot; otherwise use
@@ -149,6 +149,7 @@ fn main() -> Result<()> {
                     "elc" => render_settings.elc = true,
                     "ellc" => render_settings.ellc = true,
                     "inner-nodes" => render_settings.inner_nodes = true,
+                    "dids" => render_settings.duplication_ids = true,
                     _ => unreachable!(),
                 }
             }

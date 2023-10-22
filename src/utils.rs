@@ -61,6 +61,7 @@ pub struct RenderSettings {
     pub elc: bool,
     pub ellc: bool,
     pub links: bool,
+    pub duplication_ids: bool,
 }
 
 pub type GeneCache = HashMap<String, Gene>;

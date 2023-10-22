@@ -83,12 +83,12 @@ fn draw_species_tree(
             });
             y += K;
         } else {
-            let old_y = y;
+            let base_y = y;
 
             if let Some(name) = &t.name(n) {
                 species_map.insert(name.to_string(), (x, y));
             }
-            for (i, c) in t.children(n).iter().enumerate() {
+            for (i, c) in t.children(n).unwrap().iter().enumerate() {
                 if t.leaves_of(*c).iter().any(|l| {
                     t.name(*l)
                         .map(|name| species_to_render.contains(&name))
@@ -101,7 +101,7 @@ fn draw_species_tree(
                             .shift(0., -K / 2.);
                     } else {
                         svg.line()
-                            .from_coords(x, old_y + K, x, y + K)
+                            .from_coords(x, base_y + K, x, y + K)
                             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                             .shift(0., -K / 2.);
                         svg.line()
@@ -154,7 +154,8 @@ pub fn draw_duplications_blocks(
 
     let mut out = Group::new();
     let mut xoffset = 0.;
-    let mut duplication_sets: Vec<(Vec<(HashSet<String>, i32, i32)>, f32, usize)> = t
+    // ([Arm{}], DCS, MRCA ID, DupID)
+    let mut duplication_sets: Vec<(Vec<(HashSet<String>, i32, i32)>, f32, usize, usize)> = t
         .inners()
         .filter(|&n| t.is_duplication(n))
         .map(|n| {
@@ -198,6 +199,7 @@ pub fn draw_duplications_blocks(
                 arms,
                 t.attrs(n)["DCS"].parse::<f32>().unwrap_or_default(),
                 mrca,
+                n,
             )
         })
         .collect::<Vec<_>>();
@@ -218,7 +220,7 @@ pub fn draw_duplications_blocks(
         let mrca_name = species_tree.name(mrca).unwrap();
         dup_nodes
             .entry(mrca_name.to_string())
-            .or_insert(vec![])
+            .or_default()
             .push(dcs);
 
         let y_min =
@@ -255,6 +257,12 @@ pub fn draw_duplications_blocks(
                 .pos(xoffset + 1.1 * label_offset * K, y_min)
                 .text(format!("DCS:{:.1}%", 100. * dcs))
                 .transform(|t| t.rotate_from(-45., xoffset, y_min));
+        }
+        if render.duplication_ids {
+            out.text()
+                .pos(xoffset + 1.1 * label_offset * K, y_min)
+                .text(format!("#{}", d.3))
+                .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
         }
         // if render.elc {
         //     out.text()

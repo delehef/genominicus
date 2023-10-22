@@ -347,7 +347,7 @@ fn draw_tree(
                 if elc == 0 {
                     "".to_owned()
                 } else {
-                    format!("L:{}", elc)
+                    format!("ELC:{}", elc)
                 }
             })
             .unwrap_or_else(|| "?".to_string());
@@ -356,16 +356,19 @@ fn draw_tree(
                 if ellc == 0 {
                     "".to_owned()
                 } else {
-                    format!("L:{}", ellc)
+                    format!("ELLC:{}", ellc)
                 }
             })
             .unwrap_or_else(|| "?".to_string());
+
+        let pretty_did = format!("#{}", n);
 
         let mut label_offset = 0.;
         for (doit, text) in [
             (render.cs, pretty_dcs),
             (render.elc, pretty_elc),
             (render.ellc, pretty_ellc),
+            (render.duplication_ids, pretty_did),
         ]
         .iter()
         {
