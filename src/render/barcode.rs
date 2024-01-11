@@ -149,7 +149,10 @@ pub fn draw_duplications_blocks(
     render: &RenderSettings,
 ) -> (Group, HashMap<String, Vec<f32>>) {
     fn species_name(t: &NewickTree, n: usize) -> String {
-        t.attrs(n)["S"].to_string()
+        t.attrs(n)
+            .get("S")
+            .expect("no species (`S`) annotation found in tree")
+            .to_string()
     }
 
     let mut out = Group::new();
@@ -197,7 +200,10 @@ pub fn draw_duplications_blocks(
             let mrca = species_tree.mrca(all_species).unwrap();
             (
                 arms,
-                t.attrs(n)["DCS"].parse::<f32>().unwrap_or_default(),
+                t.attrs(n)
+                    .get("DCS")
+                    .and_then(|dcs| dcs.parse::<f32>().ok())
+                    .unwrap_or_default(),
                 mrca,
                 n,
             )
