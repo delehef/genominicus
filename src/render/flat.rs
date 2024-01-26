@@ -244,8 +244,8 @@ fn draw_tree(
                     eprintln!("{} not found", gene_name);
                     links.push((y, Vec::new(), 0, Vec::new()));
                 }
-                y += 20.;
             }
+            y += 20.;
         } else {
             svg.line()
                 .from_coords(xoffset, y, xoffset + BRANCH_WIDTH, y)
