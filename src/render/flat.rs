@@ -331,64 +331,20 @@ fn draw_tree(
         };
     }
 
-    if tree.is_duplication(n) {
-        let dcs = tree.attrs(n).get("DCS").and_then(|s| s.parse::<f32>().ok());
-        let elc = tree.attrs(n).get("ELC").and_then(|s| s.parse::<i32>().ok());
-        let ellc = tree
-            .attrs(n)
-            .get("ELLC")
-            .and_then(|s| s.parse::<i32>().ok());
-
-        let pretty_dcs = dcs
-            .map(|s| format!("{:2.0}%", (s * 100.)))
-            .unwrap_or_else(|| "?".to_string());
-        let pretty_elc = elc
-            .map(|elc| {
-                if elc == 0 {
-                    "".to_owned()
-                } else {
-                    format!("ELC:{}", elc)
-                }
-            })
-            .unwrap_or_else(|| "?".to_string());
-        let pretty_ellc = ellc
-            .map(|ellc| {
-                if ellc == 0 {
-                    "".to_owned()
-                } else {
-                    format!("ELLC:{}", ellc)
-                }
-            })
-            .unwrap_or_else(|| "?".to_string());
-
-        let pretty_did = format!("#{}", n);
-
-        let mut label_offset = 0.;
-        for (doit, text) in [
-            (render.cs, pretty_dcs),
-            (render.elc, pretty_elc),
-            (render.ellc, pretty_ellc),
-            (render.duplication_ids, pretty_did),
-        ]
-        .iter()
-        {
-            if *doit {
-                svg.text()
-                    .pos(
-                        xoffset - FONT_SIZE,
-                        yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
-                    )
-                    .text(text);
-                label_offset += 1.;
-            }
+    for (label_offset, annotation) in render.node_annotations.iter().enumerate() {
+        if let Some(annotation) = tree.attrs(n).get(annotation) {
+            svg.text()
+                .pos(
+                    xoffset - FONT_SIZE,
+                    yoffset + FONT_SIZE + 1.1 * label_offset as f32,
+                )
+                .text(annotation);
         }
-
-        caret(svg, xoffset, yoffset, 6., dcs, &grafting_method);
-    } else if !tree[n].is_leaf() {
-        caret(svg, xoffset, yoffset, 6., None, &grafting_method);
     }
 
-    if render.inner_nodes {
+    caret(svg, xoffset, yoffset, 6., None, &grafting_method);
+
+    if render.inner_tags {
         tree.attrs(n).get("S").map(|name| {
             svg.text()
                 .pos(xoffset, yoffset - FONT_SIZE)

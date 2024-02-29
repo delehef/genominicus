@@ -56,10 +56,8 @@ impl Eq for PoaElt {}
 
 #[derive(Debug, Default)]
 pub struct RenderSettings {
-    pub inner_nodes: bool,
-    pub cs: bool,
-    pub elc: bool,
-    pub ellc: bool,
+    pub inner_tags: bool,
+    pub node_annotations: Vec<String>,
     pub links: bool,
     pub duplication_ids: bool,
 }

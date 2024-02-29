@@ -193,10 +193,6 @@ pub fn draw_duplications_blocks(
                 })
                 .collect::<Vec<_>>();
 
-            // let dcs = n.data.attrs["DCS"].parse::<f32>().unwrap();
-            // let elc_all = n.data.attrs["ELC"].parse::<i32>().unwrap();
-            // let elc_large = n.data.attrs["ELLC"].parse::<i32>().unwrap();
-
             let mrca = species_tree.mrca(all_species).unwrap();
             (
                 arms,
@@ -257,33 +253,14 @@ pub fn draw_duplications_blocks(
             }
         }
 
-        let label_offset = 0.;
-        if render.cs {
-            out.text()
-                .pos(xoffset + 1.1 * label_offset * K, y_min)
-                .text(format!("DCS:{:.1}%", 100. * dcs))
-                .transform(|t| t.rotate_from(-45., xoffset, y_min));
+        for (label_offset, annotation) in render.node_annotations.iter().enumerate() {
+            let label_offset = label_offset as f32;
+            if let Some(annotation) = t.attrs(d.3).get(annotation) {
+                out.text()
+                    .pos(xoffset + 1.1 * label_offset + K, y_min)
+                    .text(annotation);
+            }
         }
-        if render.duplication_ids {
-            out.text()
-                .pos(xoffset + 1.1 * label_offset * K, y_min)
-                .text(format!("#{}", d.3))
-                .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
-        }
-        // if render.elc {
-        //     out.text()
-        //         .pos(xoffset + 1.1 * label_offset * K, y_min)
-        //         .text(format!("ELC:{}", elc_all))
-        //         .transform(|t| t.rotate_from(-45., xoffset + 1.2 * K, y_min));
-        //     label_offset += 1.;
-        // }
-        // if render.ellc {
-        //     out.text()
-        //         .pos(xoffset + 1.1 * label_offset * K, y_min)
-        //         .text(format!("ELLC:{}", elc_large))
-        //         .transform(|t| t.rotate_from(-45., xoffset + 2.4 * K, y_min));
-        //     label_offset += 1.;
-        // }
 
         xoffset += d.0.len() as f32 * K + 10.;
     }

@@ -73,47 +73,16 @@ fn draw_tree(
 
     if t.is_duplication(n) {
         let dcs = t.attrs(n).get("DCS").and_then(|s| s.parse::<f32>().ok());
-        let elc = t.attrs(n).get("ELC").and_then(|s| s.parse::<i32>().ok());
-        let ellc = t.attrs(n).get("ELLC").and_then(|s| s.parse::<i32>().ok());
 
-        let pretty_dcs = dcs
-            .map(|s| format!("{:2.0}%", (s * 100.)))
-            .unwrap_or_else(|| "?".to_string());
-        let pretty_elc = elc
-            .map(|elc| {
-                if elc == 0 {
-                    "".to_owned()
-                } else {
-                    format!("L:{}", elc)
-                }
-            })
-            .unwrap_or_else(|| "?".to_string());
-        let pretty_ellc = ellc
-            .map(|ellc| {
-                if ellc == 0 {
-                    "".to_owned()
-                } else {
-                    format!("L:{}", ellc)
-                }
-            })
-            .unwrap_or_else(|| "?".to_string());
-
-        let mut label_offset = 0.;
-        for (doit, text) in [
-            (render.cs, pretty_dcs),
-            (render.elc, pretty_elc),
-            (render.ellc, pretty_ellc),
-        ]
-        .iter()
-        {
-            if *doit {
+        for (label_offset, annotation) in render.node_annotations.iter().enumerate() {
+            let label_offset = label_offset as f32;
+            if let Some(annotation) = t.attrs(n).get(annotation) {
                 svg.text()
                     .pos(
                         xoffset - FONT_SIZE,
                         yoffset + FONT_SIZE + 1.1 * label_offset * FONT_SIZE,
                     )
-                    .text(text);
-                label_offset += 1.;
+                    .text(annotation);
             }
         }
 
@@ -121,7 +90,7 @@ fn draw_tree(
         svg.polygon()
             .from_pos_dims(xoffset - size / 2., yoffset - size / 2., size, size)
             .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
-        if render.inner_nodes {
+        if render.inner_tags {
             t.name(n).as_ref().map(|name| {
                 svg.text()
                     .pos(xoffset, yoffset - FONT_SIZE)
