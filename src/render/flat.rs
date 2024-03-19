@@ -342,7 +342,18 @@ fn draw_tree(
         }
     }
 
-    caret(svg, xoffset, yoffset, 6., None, &grafting_method);
+    caret(
+        svg,
+        xoffset,
+        yoffset,
+        6.,
+        tree[n]
+            .data()
+            .attrs
+            .get("DCS")
+            .and_then(|dcs| str::parse::<f32>(dcs).ok()),
+        &grafting_method,
+    );
 
     if render.inner_tags {
         tree.attrs(n).get("S").map(|name| {
