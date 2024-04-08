@@ -91,7 +91,7 @@ fn draw_tree(
             .from_pos_dims(xoffset - size / 2., yoffset - size / 2., size, size)
             .style(|s| s.fill_color(Some(StyleColor::Percent(1.0 - dcs, dcs, 0.))));
         if render.inner_tags {
-            t.name(n).as_ref().map(|name| {
+            t.attrs(n).get("S").map(|name| {
                 svg.text()
                     .pos(xoffset, yoffset - FONT_SIZE)
                     .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
