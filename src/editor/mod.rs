@@ -3,7 +3,7 @@ use newick::{Newick, NewickTree, NodeID};
 use ratatui::{
     backend::Backend,
     crossterm::{
-        event::{self, Event, KeyCode, KeyEventKind},
+        event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
@@ -175,7 +175,7 @@ struct CanvassedTree {
     // screen coordinate -> clade ID
     screen_to_clade: HashMap<usize, Vec<usize>>,
     clades: CladeHierarchy,
-    highlight: Option<Node>,
+    highlighters: Vec<Node>,
 }
 impl CanvassedTree {
     fn rec_make_tree(
@@ -280,7 +280,7 @@ impl CanvassedTree {
             current_len: leave_count,
             screen_to_clade: Default::default(),
             clades,
-            highlight: None,
+            highlighters: Vec::new(),
         }
     }
 
@@ -295,8 +295,17 @@ impl CanvassedTree {
         dups_nesting: Vec<f32>,
         with_fold_indicator: bool,
         use_symbols: bool,
-        highlighter: Option<&'a Node>,
+        highlighters: &[Node],
     ) -> Row<'a> {
+        const HL_COLORS: [Color; 7] = [
+            Color::LightBlue,
+            Color::LightRed,
+            Color::LightCyan,
+            Color::LightGreen,
+            Color::LightYellow,
+            Color::LightMagenta,
+            Color::Gray,
+        ];
         let landscape = if let Some(Gene {
             strand,
             left_landscape,
@@ -371,9 +380,18 @@ impl CanvassedTree {
         } else {
             Line::from("")
         };
-        let highlighted = highlighter
-            .map(|n| n.eval(&gene).unwrap().right().unwrap())
-            .unwrap_or(false);
+
+        let highlighted = highlighters
+            .iter()
+            .enumerate()
+            .filter_map(|(i, h)| {
+                if h.eval(&gene).unwrap().right().unwrap() {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .next();
         let species_color = name2color(&gene.species).to_percent();
         Row::new(vec![
             if with_fold_indicator {
@@ -401,8 +419,13 @@ impl CanvassedTree {
                     (species_color.2 * 255.0).floor() as u8,
                 ))
                 .into(),
-            if highlighted {
-                gene.name.clone().bold().blue().reversed().into()
+            if let Some(i) = highlighted {
+                gene.name
+                    .clone()
+                    .bold()
+                    .fg(HL_COLORS[i % HL_COLORS.len()])
+                    .reversed()
+                    .into()
             } else {
                 gene.name.clone().into()
             },
@@ -442,7 +465,7 @@ impl CanvassedTree {
                         dup_nesting.clone(),
                         false,
                         self.settings.use_symbols,
-                        self.highlight.as_ref(),
+                        &self.highlighters,
                     );
                     rows.push(row);
                 }
@@ -465,7 +488,7 @@ impl CanvassedTree {
                                 dup_nesting.clone(),
                                 true,
                                 self.settings.use_symbols,
-                                self.highlight.as_ref(),
+                                &self.highlighters,
                             );
                             rows.push(row);
                         }
@@ -529,7 +552,50 @@ impl CanvassedTree {
     }
 }
 
+#[derive(Copy, Clone)]
+enum Mode {
+    Root,
+    Highlighter,
+}
+impl Mode {
+    fn help(&self) -> Line {
+        match self {
+            Mode::Root => Line::from(vec![
+                "[h]".yellow().bold(),
+                "ighlight".into(),
+                " :: ".bold().white(),
+                "toggle ".into(),
+                "[S]".yellow().bold(),
+                "ymbols".into(),
+                " :: ".bold().white(),
+                "[TAB]".yellow().bold(),
+                " cycle fold  ".into(),
+                "←".yellow().bold(),
+                " fold 1×  ".into(),
+                "→".yellow().bold(),
+                " unfold 1×  ".into(),
+                "[q]".red().bold(),
+                "uit ".into(),
+            ]),
+            Mode::Highlighter => Line::from(vec![
+                "Highlights :: ".bold().white(),
+                "[a]".yellow().bold(),
+                "ppend ".into(),
+                "[c]".yellow().bold(),
+                "lear ".into(),
+                "[p]".yellow().bold(),
+                "op ".into(),
+                "[e]".yellow().bold(),
+                "dit last ".into(),
+                "[q]".red().bold(),
+                " back".into(),
+            ]),
+        }
+    }
+}
+
 struct Editor {
+    mode: Mode,
     name: String,
     tree: NewickTree,
     plot: CanvassedTree,
@@ -554,6 +620,7 @@ impl Editor {
         };
 
         Self {
+            mode: Mode::Root,
             name,
             tree,
             plot,
@@ -608,22 +675,7 @@ impl Editor {
             ])
             .split(f.size());
 
-        let title = Paragraph::new(Line::from(vec![
-            "h".yellow().bold(),
-            "ighlight".into(),
-            " :: ".bold().white(),
-            "toggle ".into(),
-            "S".yellow().bold(),
-            "ymbols".into(),
-            " :: ".bold().white(),
-            "[TAB]".yellow().bold(),
-            " cycle fold  ".into(),
-            "←".yellow().bold(),
-            " fold 1×  ".into(),
-            "→".yellow().bold(),
-            " unfold 1×  ".into(),
-        ]))
-        .block(
+        let title = Paragraph::new(self.mode.help()).block(
             Block::default()
                 .borders(Borders::BOTTOM)
                 .style(Style::default())
@@ -674,6 +726,79 @@ impl Editor {
         );
     }
 
+    fn process_input(&mut self, key: KeyEvent) {
+        match self.mode {
+            Mode::Root => match key.code {
+                KeyCode::Char('S') => {
+                    self.plot.settings.use_symbols = !self.plot.settings.use_symbols;
+                }
+                KeyCode::Char('h') => self.mode = Mode::Highlighter,
+                KeyCode::Up => self.prev(1),
+                KeyCode::Down => self.next(1),
+                KeyCode::PageUp => self.prev(10),
+                KeyCode::PageDown => self.next(10),
+                KeyCode::Home => self.top(),
+                KeyCode::End => self.bottom(),
+                KeyCode::Left => {
+                    self.plot
+                        .fold_at(self.states.gene_table.selected().unwrap());
+                }
+                KeyCode::Right => {
+                    self.plot
+                        .unfold_at(self.states.gene_table.selected().unwrap());
+                }
+                KeyCode::Tab => self
+                    .plot
+                    .toggle_all_at(self.states.gene_table.selected().unwrap()),
+                _ => {}
+            },
+            Mode::Highlighter => {
+                match key.code {
+                    KeyCode::Char('a') => {
+                        let mut t = Terminal::with_options(
+                            CrosstermBackend::new(std::io::stdout()),
+                            TerminalOptions {
+                                viewport: Viewport::Fixed(self.minibuffer),
+                            },
+                        )
+                        .unwrap();
+                        let expr = widgets::scan::ScanInput::new(String::new())
+                            .run(&mut t, self.minibuffer);
+                        if let Some((source, expr)) = expr {
+                            self.states.highlighter = source;
+                            self.plot.highlighters.push(expr);
+                        }
+                    }
+                    KeyCode::Char('c') => self.plot.highlighters.clear(),
+                    KeyCode::Char('p') => {
+                        self.plot.highlighters.pop();
+                    }
+                    KeyCode::Char('e') => {
+                        if self.plot.highlighters.pop().is_some() {
+                            let mut t = Terminal::with_options(
+                                CrosstermBackend::new(std::io::stdout()),
+                                TerminalOptions {
+                                    viewport: Viewport::Fixed(self.minibuffer),
+                                },
+                            )
+                            .unwrap();
+
+                            if let Some((source, expr)) =
+                                widgets::scan::ScanInput::new(self.states.highlighter.clone())
+                                    .run(&mut t, self.minibuffer)
+                            {
+                                self.states.highlighter = source;
+                                self.plot.highlighters.push(expr);
+                            }
+                        }
+                    }
+                    _ => {}
+                };
+                self.mode = Mode::Root
+            }
+        }
+    }
+
     fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> anyhow::Result<()> {
         GENABET
             .set(
@@ -689,45 +814,13 @@ impl Editor {
             terminal.draw(|term| self.render(term))?;
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Char('S') => {
-                            self.plot.settings.use_symbols = !self.plot.settings.use_symbols;
+                    if let KeyCode::Char('q') = key.code {
+                        match self.mode {
+                            Mode::Root => return Ok(()),
+                            _ => self.mode = Mode::Root,
                         }
-                        KeyCode::Char('h') => {
-                            let mut t = Terminal::with_options(
-                                CrosstermBackend::new(std::io::stdout()),
-                                TerminalOptions {
-                                    viewport: Viewport::Fixed(self.minibuffer),
-                                },
-                            )
-                            .unwrap();
-                            let expr = widgets::scan::ScanInput::new(&self.states.highlighter)
-                                .run(&mut t, self.minibuffer);
-                            if let Some((source, expr)) = expr {
-                                self.states.highlighter = source;
-                                self.plot.highlight = Some(expr);
-                            }
-                        }
-                        KeyCode::Up => self.prev(1),
-                        KeyCode::Down => self.next(1),
-                        KeyCode::PageUp => self.prev(10),
-                        KeyCode::PageDown => self.next(10),
-                        KeyCode::Home => self.top(),
-                        KeyCode::End => self.bottom(),
-                        KeyCode::Left => {
-                            self.plot
-                                .fold_at(self.states.gene_table.selected().unwrap());
-                        }
-                        KeyCode::Right => {
-                            self.plot
-                                .unfold_at(self.states.gene_table.selected().unwrap());
-                        }
-                        KeyCode::Tab => self
-                            .plot
-                            .toggle_all_at(self.states.gene_table.selected().unwrap()),
-                        _ => {}
                     }
+                    self.process_input(key);
                     terminal.draw(|term| self.render(term))?;
                 }
             }

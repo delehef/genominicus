@@ -13,7 +13,7 @@ pub struct ScanInput<'a> {
     input: TextArea<'a>,
 }
 impl<'a> ScanInput<'a> {
-    pub fn new(content: &str) -> Self {
+    pub fn new(content: String) -> Self {
         let mut r = ScanInput {
             input: TextArea::from([content]),
         };

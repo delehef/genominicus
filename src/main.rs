@@ -246,6 +246,7 @@ fn main() -> Result<()> {
                 newick::one_from_filename(&file).context(format!("failed to read `{}`", &file))?;
 
             let synteny = if let Some(database) = database {
+                println!("Computing synteny information...");
                 let genes = utils::make_genes_cache(&tree, &database, "id")?;
                 let colormap = utils::make_colormap(&tree, &genes);
                 Some((genes, colormap))
