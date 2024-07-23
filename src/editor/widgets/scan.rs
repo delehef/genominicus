@@ -1,4 +1,5 @@
 use crate::editor::forth::{self, Node};
+use anyhow::Context;
 use ratatui::{
     backend::Backend,
     crossterm,
@@ -25,7 +26,7 @@ impl<'a> ScanInput<'a> {
         let r = forth::parse(&self.input.lines()[0]);
 
         match &r {
-            Err(err) => {
+            Result::Err(err) => {
                 self.input.set_style(Style::default().fg(Color::LightRed));
                 self.input.set_block(
                     Block::default()
@@ -33,7 +34,7 @@ impl<'a> ScanInput<'a> {
                         .title(format!("ERROR: {}", err)),
                 );
             }
-            Ok(node) => {
+            Result::Ok(node) => {
                 self.input.set_style(Style::default().fg(Color::LightGreen));
                 self.input.set_block(
                     Block::default()
@@ -42,7 +43,7 @@ impl<'a> ScanInput<'a> {
                 );
             }
         };
-        r
+        r.context("while validating")
     }
 
     pub fn run<B: Backend>(

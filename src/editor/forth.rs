@@ -1,7 +1,26 @@
-use anyhow::*;
 use either::Either;
+use itertools::Itertools;
+use thiserror::Error;
 
 use super::DispGene;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("field {0} unknown")]
+    FieldUnknown(String),
+
+    #[error("{0}: {1} expects {2} arguments")]
+    TooFewElements(String, String, usize),
+
+    #[error("{0}: {1} expects a condition")]
+    ConditionExpected(String, String),
+
+    #[error("{0}: {1} expects a value")]
+    ValueExpected(String, String),
+
+    #[error("{0}: expected a single final expression, found {1}")]
+    SingleValueExpected(String, usize),
+}
 
 /// A Combinator operates on boolean expressions
 #[derive(Clone, Debug)]
@@ -11,6 +30,10 @@ pub enum Combinator {
     Not,
 }
 impl Combinator {
+    fn is_combinator(s: &str) -> bool {
+        <&str as TryInto<Combinator>>::try_into(s).is_ok()
+    }
+
     fn apply(&self, args: &[bool]) -> bool {
         let a1 = args[0];
         match self {
@@ -26,13 +49,14 @@ impl Combinator {
         }
     }
 }
-impl From<&str> for Combinator {
-    fn from(s: &str) -> Self {
+impl TryFrom<&str> for Combinator {
+    type Error = String;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s {
-            "&" => Combinator::And,
-            "|" => Combinator::Or,
-            "!" => Combinator::Not,
-            _ => panic!("not a Combinator"),
+            "&" => Result::Ok(Combinator::And),
+            "|" => Result::Ok(Combinator::Or),
+            "!" => Result::Ok(Combinator::Not),
+            _ => Result::Err("not a combinator".into()),
         }
     }
 }
@@ -55,6 +79,10 @@ pub enum Relation {
     Contains,
 }
 impl Relation {
+    fn is_relation(s: &str) -> bool {
+        <&str as TryInto<Relation>>::try_into(s).is_ok()
+    }
+
     fn apply(&self, args: &[String]) -> bool {
         match self {
             Relation::StartsWith => args[0].starts_with(&args[1]),
@@ -69,21 +97,22 @@ impl TryFrom<&str> for Relation {
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s {
             "=" => Result::Ok(Relation::Equal),
-            "<" => Result::Ok(Relation::StartsWith),
-            ">" => Result::Ok(Relation::EndsWith),
+            "^" => Result::Ok(Relation::StartsWith),
+            "$" => Result::Ok(Relation::EndsWith),
             "%" => Result::Ok(Relation::Contains),
             _ => Result::Err("not a function".to_string()),
         }
     }
 }
-impl std::fmt::Display for Relation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ToString for Relation {
+    fn to_string(&self) -> String {
         match self {
-            Relation::StartsWith => write!(f, "<"),
-            Relation::Equal => write!(f, "="),
-            Relation::EndsWith => write!(f, ">"),
-            Relation::Contains => write!(f, "%"),
+            Relation::StartsWith => "starts-with",
+            Relation::Equal => "equals",
+            Relation::EndsWith => "ends-with",
+            Relation::Contains => "contains",
         }
+        .into()
     }
 }
 
@@ -140,15 +169,16 @@ impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Node::Combinator(c, args) => match c {
-                Combinator::Not => write!(f, "({} {})", c, args[0]),
+                Combinator::Not => write!(f, "({} {})", c.to_string(), args[0]),
                 _ => {
-                    write!(f, "({} {} {})", c, args[0], args[1])
+                    write!(f, "({} {} {})", args[0], c.to_string(), args[1])
                 }
             },
-            // Node::Comparison(r, args) => write!(f, "({} {} {})", r, args[0], args[1]),
-            Node::Relation(ff, args) => write!(f, "({} {} {})", ff, args[0], args[1]),
+            Node::Relation(ff, args) => {
+                write!(f, "({} {} {})", args[0], ff.to_string(), args[1])
+            }
             Node::Projector(field) => write!(f, "gene.{}", field),
-            Node::Const(x) => write!(f, "{}", x),
+            Node::Const(x) => write!(f, "\"{}\"", x.clone()),
         }
     }
 }
@@ -160,15 +190,15 @@ enum Token {
     Projector(String),
     Const(String),
 }
-fn parse_token(s: &str) -> Result<Token> {
+fn parse_token(s: &str) -> Result<Token, Error> {
     match s {
-        "&" | "|" | "!" => Ok(Token::Combinator(s.into())),
-        "<" | "=" | ">" | "%" => Ok(Token::Relation(s.try_into().unwrap())),
+        _ if Combinator::is_combinator(s) => Ok(Token::Combinator(s.try_into().unwrap())),
+        _ if Relation::is_relation(s) => Ok(Token::Relation(s.try_into().unwrap())),
         _ => {
             if let Some(field) = s.strip_prefix('.') {
                 match field {
                     "species" | "id" => Ok(Token::Projector(field.to_owned())),
-                    _ => bail!("unknown field: {}", field),
+                    _ => Result::Err(Error::FieldUnknown(field.to_owned())),
                 }
             } else {
                 Ok(Token::Const(s.to_owned()))
@@ -177,27 +207,31 @@ fn parse_token(s: &str) -> Result<Token> {
     }
 }
 
+fn pretty_stack(stack: &[Node]) -> String {
+    stack.iter().map(|x| x.to_string()).join(" ")
+}
+
 /// Pops & returns an argument of a stack, returns an error is none are available
-fn take_one(stack: &mut Vec<Node>, fname: &str) -> Result<Node> {
+fn take_one(stack: &mut Vec<Node>, fname: &str) -> Result<Node, Error> {
     let r1 = stack
         .pop()
-        .ok_or_else(|| anyhow!("{} expects an argument", fname))?;
+        .ok_or_else(|| Error::TooFewElements(pretty_stack(stack), fname.to_owned(), 1))?;
     Ok(r1)
 }
 
 /// Pops & returns two arguments of a stack, returns an error is two are not available
-fn take_two(stack: &mut Vec<Node>, fname: &str) -> Result<Vec<Node>> {
+fn take_two(stack: &mut Vec<Node>, fname: &str) -> Result<Vec<Node>, Error> {
     let r2 = stack
         .pop()
-        .ok_or_else(|| anyhow!("{} expects two arguments", fname))?;
+        .ok_or_else(|| Error::TooFewElements(pretty_stack(stack), fname.to_owned(), 2))?;
     let r1 = stack
         .pop()
-        .ok_or_else(|| anyhow!("{} expects two arguments", fname))?;
+        .ok_or_else(|| Error::TooFewElements(pretty_stack(stack), fname.to_owned(), 2))?;
     Ok(vec![r1, r2])
 }
 
 /// Returns a Node representing the root of the AST parsed from the string representation of a Forth program
-pub fn parse(s: &str) -> Result<Node> {
+pub fn parse(s: &str) -> Result<Node, Error> {
     let tokens = s.split_whitespace();
     let mut stack = Vec::new();
 
@@ -207,14 +241,20 @@ pub fn parse(s: &str) -> Result<Node> {
                 Combinator::And | Combinator::Or => {
                     let args = take_two(&mut stack, &c.to_string())?;
                     if !args.iter().all(|n| n.is_bool()) {
-                        bail!("{} expects conditions", c.to_string());
+                        return Err(Error::ConditionExpected(
+                            pretty_stack(&stack),
+                            c.to_string(),
+                        ));
                     }
                     stack.push(Node::Combinator(c, args))
                 }
                 Combinator::Not => {
                     let arg = take_one(&mut stack, &c.to_string())?;
                     if !arg.is_bool() {
-                        bail!("{} expects conditions", c.to_string());
+                        return Err(Error::ConditionExpected(
+                            pretty_stack(&stack),
+                            c.to_string(),
+                        ));
                     }
                     stack.push(Node::Combinator(c, vec![arg]))
                 }
@@ -222,7 +262,7 @@ pub fn parse(s: &str) -> Result<Node> {
             Token::Relation(f) => {
                 let args = take_two(&mut stack, &f.to_string())?;
                 if !args.iter().all(|n| n.is_value()) {
-                    bail!("{} expects values", f.to_string());
+                    return Err(Error::ValueExpected(pretty_stack(&stack), f.to_string()));
                 }
                 stack.push(Node::Relation(f, args));
             }
@@ -232,10 +272,16 @@ pub fn parse(s: &str) -> Result<Node> {
     }
 
     if stack.is_empty() || stack.len() > 1 {
-        bail!("expected a single final expression")
+        return Err(Error::SingleValueExpected(
+            pretty_stack(&stack),
+            stack.len(),
+        ));
     }
     if stack[0].is_value() {
-        bail!("expected a comparison")
+        return Err(Error::ConditionExpected(
+            pretty_stack(&stack),
+            String::new(),
+        ));
     }
 
     Ok(stack[0].to_owned())
