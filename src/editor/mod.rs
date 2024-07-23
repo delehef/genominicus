@@ -14,17 +14,22 @@ use ratatui::{
         Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
         Table, TableState,
     },
-    Frame, Terminal,
+    Frame, Terminal, TerminalOptions, Viewport,
 };
 use std::{collections::HashMap, io, iter::FromIterator, ops::Range, sync::OnceLock};
 use syntesuite::genebook::Gene;
 
-use crate::utils::{ColorMap, GeneCache, WINDOW};
+use crate::{
+    name2color,
+    utils::{ColorMap, GeneCache, WINDOW},
+};
 
-use self::canvas::Canvas;
+use self::{canvas::Canvas, forth::Node};
 
 mod canvas;
+mod forth;
 mod utils;
+mod widgets;
 
 const BLOCKS: &[Range<u32>] = &[
     // Greek letters
@@ -85,12 +90,14 @@ struct LandscapeData {
 struct States {
     gene_table: TableState,
     scrollbar: ScrollbarState,
+    highlighter: String,
 }
 impl States {
     fn new(size: usize) -> Self {
         States {
             gene_table: TableState::new().with_selected(0),
             scrollbar: ScrollbarState::new(size - 1),
+            highlighter: String::new(),
         }
     }
 }
@@ -168,6 +175,7 @@ struct CanvassedTree {
     // screen coordinate -> clade ID
     screen_to_clade: HashMap<usize, Vec<usize>>,
     clades: CladeHierarchy,
+    highlight: Option<Node>,
 }
 impl CanvassedTree {
     fn rec_make_tree(
@@ -272,6 +280,7 @@ impl CanvassedTree {
             current_len: leave_count,
             screen_to_clade: Default::default(),
             clades,
+            highlight: None,
         }
     }
 
@@ -279,14 +288,15 @@ impl CanvassedTree {
         self.current_len
     }
 
-    fn gene_to_row(
+    fn gene_to_row<'a>(
         graph_line: String,
-        landscape_data: Option<&LandscapeData>,
+        landscape_data: Option<&'a LandscapeData>,
         gene: DispGene,
         dups_nesting: Vec<f32>,
         with_fold_indicator: bool,
         use_symbols: bool,
-    ) -> Row {
+        highlighter: Option<&'a Node>,
+    ) -> Row<'a> {
         let landscape = if let Some(Gene {
             strand,
             left_landscape,
@@ -319,7 +329,7 @@ impl CanvassedTree {
                         })
                     }))
                     .chain(
-                        std::iter::once(Span::from(
+                        std::iter::once(
                             format!(" {} ", gene_to_char(*family, *strand, use_symbols)).fg({
                                 let color = landscape_data
                                     .unwrap()
@@ -333,7 +343,7 @@ impl CanvassedTree {
                                     (color.2 * 255.0).floor() as u8,
                                 )
                             }),
-                        ))
+                        )
                         .chain(right_landscape.iter().map(|g| {
                             Span::from(format!(
                                 " {}",
@@ -361,6 +371,10 @@ impl CanvassedTree {
         } else {
             Line::from("")
         };
+        let highlighted = highlighter
+            .map(|n| n.eval(&gene).unwrap().right().unwrap())
+            .unwrap_or(false);
+        let species_color = name2color(&gene.species).to_percent();
         Row::new(vec![
             if with_fold_indicator {
                 Cell::from("⋮".to_string()).bold()
@@ -380,8 +394,18 @@ impl CanvassedTree {
                     })
                     .collect::<Vec<_>>(),
             )),
-            gene.species.clone().into(),
-            gene.name.clone().into(),
+            gene.species
+                .fg(Color::Rgb(
+                    (species_color.0 * 255.0).floor() as u8,
+                    (species_color.1 * 255.0).floor() as u8,
+                    (species_color.2 * 255.0).floor() as u8,
+                ))
+                .into(),
+            if highlighted {
+                gene.name.clone().bold().blue().reversed().into()
+            } else {
+                gene.name.clone().into()
+            },
             landscape.into(),
         ])
     }
@@ -418,6 +442,7 @@ impl CanvassedTree {
                         dup_nesting.clone(),
                         false,
                         self.settings.use_symbols,
+                        self.highlight.as_ref(),
                     );
                     rows.push(row);
                 }
@@ -440,6 +465,7 @@ impl CanvassedTree {
                                 dup_nesting.clone(),
                                 true,
                                 self.settings.use_symbols,
+                                self.highlight.as_ref(),
                             );
                             rows.push(row);
                         }
@@ -510,6 +536,7 @@ struct Editor {
     screen: Screen,
     states: States,
     landscape_data: Option<LandscapeData>,
+    minibuffer: Rect,
 }
 impl Editor {
     pub fn new(
@@ -533,6 +560,7 @@ impl Editor {
             screen: Screen::TreeView,
             states,
             landscape_data,
+            minibuffer: Default::default(),
         }
     }
 
@@ -581,9 +609,13 @@ impl Editor {
             .split(f.size());
 
         let title = Paragraph::new(Line::from(vec![
+            "h".yellow().bold(),
+            "ighlight".into(),
+            " :: ".bold().white(),
+            "toggle ".into(),
             "S".yellow().bold(),
-            " toggle symbolic".into(),
-            " -- ".into(),
+            "ymbols".into(),
+            " :: ".bold().white(),
             "[TAB]".yellow().bold(),
             " cycle fold  ".into(),
             "←".yellow().bold(),
@@ -603,6 +635,8 @@ impl Editor {
                 ])),
         );
         f.render_widget(title, chunks[0]);
+
+        self.minibuffer = chunks[2];
 
         let tree_depth = self.tree.topological_depth().1;
         let dups_width = self.plot.max_dup_nesting();
@@ -645,7 +679,7 @@ impl Editor {
             .set(
                 BLOCKS
                     .iter()
-                    .flat_map(|b| b.clone().into_iter())
+                    .flat_map(|b| b.clone())
                     .map(|c| char::from_u32(c).unwrap())
                     .collect(),
             )
@@ -659,6 +693,21 @@ impl Editor {
                         KeyCode::Char('q') => return Ok(()),
                         KeyCode::Char('S') => {
                             self.plot.settings.use_symbols = !self.plot.settings.use_symbols;
+                        }
+                        KeyCode::Char('h') => {
+                            let mut t = Terminal::with_options(
+                                CrosstermBackend::new(std::io::stdout()),
+                                TerminalOptions {
+                                    viewport: Viewport::Fixed(self.minibuffer),
+                                },
+                            )
+                            .unwrap();
+                            let expr = widgets::scan::ScanInput::new(&self.states.highlighter)
+                                .run(&mut t, self.minibuffer);
+                            if let Some((source, expr)) = expr {
+                                self.states.highlighter = source;
+                                self.plot.highlight = Some(expr);
+                            }
                         }
                         KeyCode::Up => self.prev(1),
                         KeyCode::Down => self.next(1),
