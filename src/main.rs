@@ -6,6 +6,7 @@ use log::*;
 use utils::*;
 
 mod align;
+mod editor;
 mod render;
 mod utils;
 
@@ -54,8 +55,8 @@ enum Commands {
     /// Render one or more gene trees, with their syntenic environment stored in the provided database
     Plot {
         /// The gene trees to render
-        #[arg(required = true)]
-        files: Vec<String>,
+        #[arg()]
+        file: String,
 
         /// Explicitely set an output file name
         #[arg(short, long)]
@@ -101,6 +102,20 @@ enum Commands {
         #[arg(short = 'O', long)]
         open: Option<Option<String>>,
     },
+
+    Show {
+        /// The gene trees to render
+        #[arg()]
+        file: String,
+
+        /// The database containing the syntenic environment of each gene, as built with `build-database`
+        #[arg(short = 'D', long = "database")]
+        database: Option<String>,
+
+        /// use symbols to draw genes of the same family
+        #[clap(long = "symbolic")]
+        use_symbols: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -129,7 +144,7 @@ fn main() -> Result<()> {
             args.window as isize,
         ),
         Commands::Plot {
-            files,
+            file,
             out,
             database,
             species_tree,
@@ -150,86 +165,102 @@ fn main() -> Result<()> {
                 }
             }
 
-            for filename in files.iter() {
-                info!(
-                    "Rendering {} as {}",
-                    filename.bold().bright_white(),
-                    graph_type.bold().yellow()
-                );
-                let mut out_filename =
-                    std::path::PathBuf::from(out.clone().unwrap_or_else(|| filename.to_string()));
-                out_filename.set_file_name(
-                    out_filename
-                        .file_stem()
-                        .with_context(|| {
-                            anyhow!(
-                                "invalid file name: {}",
-                                out_filename.to_str().unwrap().bold().yellow()
-                            )
-                        })?
-                        .to_owned(),
-                );
-                let out_filename = out_filename.to_str().unwrap();
-                let t = newick::one_from_filename(filename)
-                    .context(format!("failed to read `{}`", filename))?;
-                let out = match graph_type.as_str() {
-                    "flat" => {
-                        let genes = make_genes_cache(&t, &database, &id_column)?;
-                        let colormap = if colorize_per_duplication {
-                            make_colormap_per_duplication(&t, &genes, colorize_all)
-                        } else {
-                            make_colormap(&t, &genes)
-                        };
-                        let petmap = make_petnamemap(&t, &genes);
-                        let out = format!("{}-flat.svg", out_filename);
-                        render::flat::render(
-                            &t,
-                            &genes,
-                            &colormap,
-                            &petmap,
-                            &out,
-                            &render_settings,
-                        );
-                        out
-                    }
-                    "html" => {
-                        let genes = make_genes_cache(&t, &database, &id_column)?;
-                        let colormap = if colorize_per_duplication {
-                            make_colormap_per_duplication(&t, &genes, colorize_all)
-                        } else {
-                            make_colormap(&t, &genes)
-                        };
-                        let out = format!("{}.html", out_filename);
-                        render::html::render(&t, &genes, &colormap, &out);
-                        out
-                    }
-                    "barcode" => {
-                        let out = format!("{}-barcode.svg", out_filename);
-                        render::barcode::render(
-                            &t,
-                            species_tree.as_ref().unwrap(),
-                            &out,
-                            filter_species_tree,
-                            &render_settings,
-                        );
-                        out
-                    }
-                    "skeleton" => {
-                        let out = format!("{}-skeleton.svg", out_filename);
-                        render::skeleton::render(&t, &out, &render_settings);
-                        out
-                    }
-                    _ => unimplemented!(),
-                };
-                if let Some(open_with) = open.as_ref() {
-                    if let Some(program) = open_with.as_ref() {
-                        open::with(&out, program)?;
+            info!(
+                "Rendering {} as {}",
+                file.bold().bright_white(),
+                graph_type.bold().yellow()
+            );
+            let mut out_filename =
+                std::path::PathBuf::from(out.clone().unwrap_or_else(|| file.to_string()));
+            out_filename.set_file_name(
+                out_filename
+                    .file_stem()
+                    .with_context(|| {
+                        anyhow!(
+                            "invalid file name: {}",
+                            out_filename.to_str().unwrap().bold().yellow()
+                        )
+                    })?
+                    .to_owned(),
+            );
+            let out_filename = out_filename.to_str().unwrap();
+            let t =
+                newick::one_from_filename(&file).context(format!("failed to read `{}`", &file))?;
+            let out = match graph_type.as_str() {
+                "flat" => {
+                    let genes = make_genes_cache(&t, &database, &id_column)?;
+                    let colormap = if colorize_per_duplication {
+                        make_colormap_per_duplication(&t, &genes, colorize_all)
                     } else {
-                        open::that(&out)?;
+                        make_colormap(&t, &genes)
                     };
+                    let petmap = make_petnamemap(&t, &genes);
+                    let out = format!("{}-flat.svg", out_filename);
+                    render::flat::render(&t, &genes, &colormap, &petmap, &out, &render_settings);
+                    out
+                }
+                "html" => {
+                    let genes = make_genes_cache(&t, &database, &id_column)?;
+                    let colormap = if colorize_per_duplication {
+                        make_colormap_per_duplication(&t, &genes, colorize_all)
+                    } else {
+                        make_colormap(&t, &genes)
+                    };
+                    let out = format!("{}.html", out_filename);
+                    render::html::render(&t, &genes, &colormap, &out);
+                    out
+                }
+                "barcode" => {
+                    let out = format!("{}-barcode.svg", out_filename);
+                    render::barcode::render(
+                        &t,
+                        species_tree.as_ref().unwrap(),
+                        &out,
+                        filter_species_tree,
+                        &render_settings,
+                    );
+                    out
+                }
+                "skeleton" => {
+                    let out = format!("{}-skeleton.svg", out_filename);
+                    render::skeleton::render(&t, &out, &render_settings);
+                    out
+                }
+                _ => unimplemented!(),
+            };
+            if let Some(open_with) = open.as_ref() {
+                if let Some(program) = open_with.as_ref() {
+                    open::with(&out, program)?;
+                } else {
+                    open::that(&out)?;
                 };
-            }
+            };
             Ok(())
+        }
+        Commands::Show {
+            file,
+            database,
+            use_symbols,
+        } => {
+            let tree =
+                newick::one_from_filename(&file).context(format!("failed to read `{}`", &file))?;
+
+            let synteny = if let Some(database) = database {
+                let genes = utils::make_genes_cache(&tree, &database, "id")?;
+                let colormap = utils::make_colormap(&tree, &genes);
+                Some((genes, colormap))
+            } else {
+                None
+            };
+
+            editor::run(
+                file.clone(),
+                tree,
+                synteny,
+                editor::Settings {
+                    tree: editor::TreeSettings { use_symbols },
+                },
+            )
         }
     }
 }

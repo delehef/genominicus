@@ -29,6 +29,7 @@ palette = "0.6"
 petgraph = "0.6"
 petname = "2"
 rand = "0.8"
+ratatui = "0.27.0"
 regex = "1.7.1"
 rusqlite = "~0.31"
 serde = { version = "1.0", features = ["derive"] }
