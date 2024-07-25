@@ -2,6 +2,7 @@ use anyhow::*;
 use anyhow::{Context, Result};
 use clap::*;
 use colored::Colorize;
+use editor::widgets::treeview::TreeViewSettings;
 use log::*;
 use utils::*;
 
@@ -259,7 +260,7 @@ fn main() -> Result<()> {
                 tree,
                 synteny,
                 editor::Settings {
-                    tree: editor::TreeSettings { use_symbols },
+                    tree: TreeViewSettings { use_symbols },
                 },
             )
         }

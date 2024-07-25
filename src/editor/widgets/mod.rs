@@ -1,1 +1,2 @@
-pub(super) mod scan;
+pub mod scan;
+pub mod treeview;

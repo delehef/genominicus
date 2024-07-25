@@ -2,7 +2,7 @@ use either::Either;
 use itertools::Itertools;
 use thiserror::Error;
 
-use super::DispGene;
+use super::widgets::treeview::DispGene;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -118,21 +118,21 @@ impl ToString for Relation {
 
 /// Nodes represent the parsed AST, sequentially built from a stack of Tokens.
 #[derive(Clone, Debug)]
-pub enum Node {
-    Combinator(Combinator, Vec<Node>),
-    Relation(Relation, Vec<Node>),
+pub enum ForthExpr {
+    Combinator(Combinator, Vec<ForthExpr>),
+    Relation(Relation, Vec<ForthExpr>),
     Projector(String),
     Const(String),
 }
-impl Node {
+impl ForthExpr {
     fn is_bool(&self) -> bool {
-        matches!(self, Node::Combinator(..) | Node::Relation(..))
+        matches!(self, ForthExpr::Combinator(..) | ForthExpr::Relation(..))
     }
     fn is_value(&self) -> bool {
         !self.is_bool()
     }
 }
-impl Node {
+impl ForthExpr {
     /// Evaluates an AST at a given position i and returns, if any, the computed
     /// value.
     ///
@@ -141,14 +141,14 @@ impl Node {
     /// combinator. An Either monad encodes this dichotomy.
     pub fn eval(&self, gene: &DispGene) -> Option<Either<String, bool>> {
         match self {
-            Node::Combinator(c, args) => {
+            ForthExpr::Combinator(c, args) => {
                 let args = args
                     .iter()
                     .map(|a| a.eval(gene).map(|x| x.right().unwrap()))
                     .collect::<Option<Vec<_>>>();
                 args.map(|args| Either::Right(c.apply(&args)))
             }
-            Node::Relation(f, args) => {
+            ForthExpr::Relation(f, args) => {
                 let args = args
                     .iter()
                     .map(|a| a.eval(gene).map(|x| x.left().unwrap()))
@@ -156,29 +156,29 @@ impl Node {
                 args.map(|args| Either::Right(f.apply(&args)))
             }
             // Node::Column(_, column) => project(i, column).map(Either::Left),
-            Node::Projector(field) => match field.as_str() {
+            ForthExpr::Projector(field) => match field.as_str() {
                 "species" => Some(Either::Left(gene.species.clone())),
                 "id" => Some(Either::Left(gene.name.clone())),
                 _ => unreachable!(),
             },
-            Node::Const(x) => Some(Either::Left(x.clone())),
+            ForthExpr::Const(x) => Some(Either::Left(x.clone())),
         }
     }
 }
-impl std::fmt::Display for Node {
+impl std::fmt::Display for ForthExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Node::Combinator(c, args) => match c {
+            ForthExpr::Combinator(c, args) => match c {
                 Combinator::Not => write!(f, "({} {})", c.to_string(), args[0]),
                 _ => {
                     write!(f, "({} {} {})", args[0], c.to_string(), args[1])
                 }
             },
-            Node::Relation(ff, args) => {
+            ForthExpr::Relation(ff, args) => {
                 write!(f, "({} {} {})", args[0], ff.to_string(), args[1])
             }
-            Node::Projector(field) => write!(f, "gene.{}", field),
-            Node::Const(x) => write!(f, "\"{}\"", x.clone()),
+            ForthExpr::Projector(field) => write!(f, "gene.{}", field),
+            ForthExpr::Const(x) => write!(f, "\"{}\"", x.clone()),
         }
     }
 }
@@ -207,12 +207,12 @@ fn parse_token(s: &str) -> Result<Token, Error> {
     }
 }
 
-fn pretty_stack(stack: &[Node]) -> String {
+fn pretty_stack(stack: &[ForthExpr]) -> String {
     stack.iter().map(|x| x.to_string()).join(" ")
 }
 
 /// Pops & returns an argument of a stack, returns an error is none are available
-fn take_one(stack: &mut Vec<Node>, fname: &str) -> Result<Node, Error> {
+fn take_one(stack: &mut Vec<ForthExpr>, fname: &str) -> Result<ForthExpr, Error> {
     let r1 = stack
         .pop()
         .ok_or_else(|| Error::TooFewElements(pretty_stack(stack), fname.to_owned(), 1))?;
@@ -220,7 +220,7 @@ fn take_one(stack: &mut Vec<Node>, fname: &str) -> Result<Node, Error> {
 }
 
 /// Pops & returns two arguments of a stack, returns an error is two are not available
-fn take_two(stack: &mut Vec<Node>, fname: &str) -> Result<Vec<Node>, Error> {
+fn take_two(stack: &mut Vec<ForthExpr>, fname: &str) -> Result<Vec<ForthExpr>, Error> {
     let r2 = stack
         .pop()
         .ok_or_else(|| Error::TooFewElements(pretty_stack(stack), fname.to_owned(), 2))?;
@@ -231,7 +231,7 @@ fn take_two(stack: &mut Vec<Node>, fname: &str) -> Result<Vec<Node>, Error> {
 }
 
 /// Returns a Node representing the root of the AST parsed from the string representation of a Forth program
-pub fn parse(s: &str) -> Result<Node, Error> {
+pub fn parse(s: &str) -> Result<ForthExpr, Error> {
     let tokens = s.split_whitespace();
     let mut stack = Vec::new();
 
@@ -246,7 +246,7 @@ pub fn parse(s: &str) -> Result<Node, Error> {
                             c.to_string(),
                         ));
                     }
-                    stack.push(Node::Combinator(c, args))
+                    stack.push(ForthExpr::Combinator(c, args))
                 }
                 Combinator::Not => {
                     let arg = take_one(&mut stack, &c.to_string())?;
@@ -256,7 +256,7 @@ pub fn parse(s: &str) -> Result<Node, Error> {
                             c.to_string(),
                         ));
                     }
-                    stack.push(Node::Combinator(c, vec![arg]))
+                    stack.push(ForthExpr::Combinator(c, vec![arg]))
                 }
             },
             Token::Relation(f) => {
@@ -264,10 +264,10 @@ pub fn parse(s: &str) -> Result<Node, Error> {
                 if !args.iter().all(|n| n.is_value()) {
                     return Err(Error::ValueExpected(pretty_stack(&stack), f.to_string()));
                 }
-                stack.push(Node::Relation(f, args));
+                stack.push(ForthExpr::Relation(f, args));
             }
-            Token::Const(x) => stack.push(Node::Const(x)),
-            Token::Projector(field) => stack.push(Node::Projector(field)),
+            Token::Const(x) => stack.push(ForthExpr::Const(x)),
+            Token::Projector(field) => stack.push(ForthExpr::Projector(field)),
         }
     }
 

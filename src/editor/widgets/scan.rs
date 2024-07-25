@@ -1,4 +1,4 @@
-use crate::editor::forth::{self, Node};
+use crate::editor::forth::{self, ForthExpr};
 use anyhow::Context;
 use ratatui::{
     backend::Backend,
@@ -22,7 +22,7 @@ impl<'a> ScanInput<'a> {
         r
     }
 
-    fn validate(&mut self) -> anyhow::Result<Node> {
+    fn validate(&mut self) -> anyhow::Result<ForthExpr> {
         let r = forth::parse(&self.input.lines()[0]);
 
         match &r {
@@ -50,7 +50,7 @@ impl<'a> ScanInput<'a> {
         mut self,
         term: &mut Terminal<B>,
         target: Rect,
-    ) -> Option<(String, Node)> {
+    ) -> Option<(String, ForthExpr)> {
         self.input.set_cursor_line_style(Style::default());
         loop {
             let _ = self.validate();
