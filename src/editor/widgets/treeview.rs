@@ -1,5 +1,3 @@
-use std::{collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
-
 use newick::{Newick, NewickTree, NodeID};
 use ratatui::{
     layout::{Constraint, Margin, Rect},
@@ -8,11 +6,11 @@ use ratatui::{
     widgets::{Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState},
     Frame,
 };
+use std::{collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
 use syntesuite::genebook::Gene;
 
 use crate::{
-    editor::{canvas::Canvas, forth::ForthExpr},
-    name2color, ColorMap, GeneCache, WINDOW,
+    editor::forth::ForthExpr, name2color, shiftreg::ShiftRegister, ColorMap, GeneCache, WINDOW,
 };
 
 const BLOCKS: &[Range<u32>] = &[
@@ -51,6 +49,31 @@ fn gene_to_char(family: usize, strand: syntesuite::Strand, symbol: bool) -> char
     }
 }
 
+#[derive(Default, Clone)]
+struct FoldingPoint {
+    clade: Vec<Vec<NodeID>>,
+    point: usize,
+}
+impl FoldingPoint {
+    fn fold(&mut self) -> Option<&[NodeID]> {
+        if self.point == self.clade.len() {
+            return None;
+        } else {
+            self.point += 1;
+            return Some(&self.clade[self.point - 1]);
+        }
+    }
+
+    fn unfold(&mut self) -> Option<&[NodeID]> {
+        if self.point == 0 {
+            return None;
+        } else {
+            self.point -= 1;
+            return Some(&self.clade[self.point]);
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DispGene {
     pub name: String,
@@ -68,10 +91,12 @@ enum Clade {
         graph_line: usize,
         dup_nesting: Vec<f32>,
         gene: DispGene,
+        id: NodeID,
     },
     SubClade {
         subclades: Vec<usize>,
         folded: bool,
+        id: NodeID,
     },
 }
 
@@ -85,6 +110,7 @@ impl CladeHierarchy {
             clades: vec![Clade::SubClade {
                 subclades: vec![],
                 folded: false,
+                id: 1,
             }],
         }
     }
@@ -127,6 +153,38 @@ impl CladeHierarchy {
 
 const DEPTH_FACTOR: usize = 2;
 
+#[derive(PartialEq, Eq)]
+enum Position {
+    First,
+    Last,
+    Other,
+}
+struct NodeContext {
+    id: NodeID,
+    depth: i64,
+    position: Position,
+}
+
+#[derive(Default)]
+struct DuplicationsCache {
+    nestings: HashMap<NodeID, Vec<DupNesting>>,
+    max_nesting: usize,
+}
+
+#[derive(Default)]
+struct FoldCache {
+    fold_level: HashMap<NodeID, usize>,
+    folding_points: Vec<FoldingPoint>,
+}
+
+struct Caches {
+    genes: HashMap<NodeID, DispGene>,
+    lineages: HashMap<NodeID, Vec<NodeContext>>,
+    tree: HashMap<NodeID, String>,
+    duplications: DuplicationsCache,
+    folding: FoldCache,
+}
+
 struct States {
     gene_table: TableState,
     scrollbar: ScrollbarState,
@@ -140,97 +198,49 @@ impl States {
     }
 }
 
+enum DupNesting {
+    Head(f32),
+    Body(f32),
+    Tail(f32),
+}
+impl DupNesting {
+    fn score(&self) -> f32 {
+        match self {
+            DupNesting::Head(x) | DupNesting::Body(x) | DupNesting::Tail(x) => *x,
+        }
+    }
+
+    fn to_span(&self) -> Span {
+        let score = self.score();
+        Span::from(match self {
+            DupNesting::Head(_) => "┬",
+            DupNesting::Body(_) => "│",
+            DupNesting::Tail(_) => "┴",
+        })
+        .fg(if score < 0. {
+            Color::LightBlue
+        } else {
+            Color::Rgb(
+                ((1. - score) * 255.0).ceil() as u8,
+                (score * 255.).ceil() as u8,
+                0,
+            )
+        })
+    }
+}
+
 pub struct TreeView {
+    cache: Caches,
     tree: Rc<NewickTree>,
     pub settings: TreeViewSettings,
     landscape_data: Option<LandscapeData>,
-    canvas: Canvas,
-    dup_level: Vec<Vec<f32>>,
     current_len: usize,
-    // screen coordinate -> clade ID
-    screen_to_clade: HashMap<usize, Vec<usize>>,
-    clades: CladeHierarchy,
+    // screen coordinate -> inner nodes IDs
+    screen_to_nodes: HashMap<usize, Vec<usize>>,
     pub highlighters: Vec<ForthExpr>,
     states: States,
 }
 impl TreeView {
-    fn rec_make_tree(
-        t: &NewickTree,
-        n: NodeID,
-        current_y: usize,
-        current_depth: usize,
-        graph: &mut Canvas,
-        mut dups_nesting: Vec<f32>,
-        dups: &mut Vec<Vec<f32>>,
-        clades: &mut CladeHierarchy,
-        current_clade: usize,
-    ) -> usize {
-        if t[n].is_leaf() {
-            dups[current_y] = dups_nesting.clone();
-            let my_clade = Clade::Taxon {
-                graph_line: current_y,
-                dup_nesting: dups_nesting,
-                gene: DispGene {
-                    name: t.name(n).cloned().unwrap_or("UNKNWN".into()),
-                    species: t.attrs(n).get("S").cloned().unwrap_or("UNKNWN".into()),
-                },
-            };
-            clades.append_in(my_clade, current_clade);
-            current_y + 1
-        } else {
-            let my_clade = clades.append_in(
-                Clade::SubClade {
-                    subclades: vec![],
-                    folded: false,
-                },
-                current_clade,
-            );
-            if t.is_duplication(n) {
-                graph.write_str(current_y, current_depth, "─D");
-                dups_nesting.push(
-                    t.attrs(n)
-                        .get("DCS")
-                        .map(|x| x.parse::<f32>().unwrap())
-                        .unwrap_or(-1.),
-                );
-            } else {
-                graph.write_str(current_y, current_depth, "─┬");
-            };
-
-            let old_y = current_y;
-            let mut current_y = current_y;
-            let bar = if t.is_duplication(n) { '║' } else { '│' };
-            let l = if t.is_duplication(n) { '╙' } else { '└' };
-
-            for (i, child) in t[n].children().iter().enumerate() {
-                if t[*child].is_leaf() {
-                    for i in current_depth + 2..graph.width() {
-                        graph.write(current_y, i, '─');
-                    }
-                }
-                for y in old_y + 1..current_y {
-                    graph.write(y, current_depth + 1, bar);
-                }
-                if i > 0 {
-                    graph.write(current_y, current_depth + 1, l);
-                }
-
-                current_y = Self::rec_make_tree(
-                    t,
-                    *child,
-                    current_y,
-                    current_depth + DEPTH_FACTOR,
-                    graph,
-                    dups_nesting.clone(),
-                    dups,
-                    clades,
-                    my_clade,
-                );
-            }
-            current_y
-        }
-    }
-
     pub fn from_newick(
         tree: Rc<NewickTree>,
         settings: TreeViewSettings,
@@ -245,45 +255,191 @@ impl TreeView {
         });
 
         let leave_count = tree.leaves().count();
-        let mut canvas = Canvas::new(leave_count, DEPTH_FACTOR * tree.topological_depth().1);
-        let mut dups = vec![vec![]; leave_count];
-        let mut clades: CladeHierarchy = CladeHierarchy::new();
 
-        Self::rec_make_tree(
-            &tree,
-            tree.root(),
-            0,
-            0,
-            &mut canvas,
-            Vec::new(),
-            &mut dups,
-            &mut clades,
-            0,
-        );
+        let genes = tree
+            .leaves()
+            .map(|n| {
+                (
+                    n,
+                    DispGene {
+                        name: tree.name(n).cloned().unwrap_or("UNKNWN".into()),
+                        species: tree.attrs(n).get("S").cloned().unwrap_or("UNKNWN".into()),
+                    },
+                )
+            })
+            .collect();
 
-        Self {
+        let lineages = tree
+            .leaves()
+            .map(|n| {
+                (
+                    n,
+                    tree.ascendance(n)
+                        .into_iter()
+                        .map(|n| NodeContext {
+                            id: n,
+                            depth: tree.node_topological_depth(n).unwrap(),
+                            position: {
+                                if let Some(parent) = tree.parent(n) {
+                                    if tree.children(parent).unwrap()[0] == n {
+                                        Position::First
+                                    } else {
+                                        Position::Last
+                                    }
+                                } else {
+                                    Position::Last
+                                }
+                            },
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let mut r = Self {
+            cache: Caches {
+                genes,
+                lineages,
+                tree: Default::default(),
+                duplications: Default::default(),
+                folding: Default::default(),
+            },
             tree,
             landscape_data,
             settings,
-            canvas,
-            dup_level: dups,
             current_len: leave_count,
-            screen_to_clade: Default::default(),
-            clades,
+            screen_to_nodes: Default::default(),
             highlighters: Vec::new(),
             states: States::new(leave_count),
-        }
+        };
+        r.cache_tree_graph();
+        r.cache_dup_nesting();
+        r.cache_folding();
+        r
     }
 
     pub fn len(&self) -> usize {
         self.current_len
     }
 
+    fn cache_tree_graph(&mut self) {
+        self.cache.tree = self
+            .tree
+            .leaves()
+            .map(|n| (n, self.make_tree_line(n)))
+            .collect();
+    }
+
+    fn cache_folding(&mut self) {
+        self.cache.folding.folding_points = Vec::with_capacity(self.tree.len());
+        for (y, n) in self.tree.leaves().enumerate() {
+            self.cache.folding.folding_points.push(FoldingPoint {
+                clade: self.cache.lineages[&n]
+                    .iter()
+                    .map(|a| self.tree.leaves_of(a.id))
+                    .collect(),
+                point: 0,
+            });
+            self.cache.folding.fold_level.insert(n, 0);
+        }
+    }
+
+    fn cache_dup_nesting(&mut self) {
+        self.cache.duplications.nestings.clear();
+        for n in self.tree.leaves() {
+            // let mut pure_head = ShiftRegister::new(1);
+            let mut pure_head_broken = false;
+            let mut pure_tail_broken = false;
+            let mut pure_head = ShiftRegister::new(3, false);
+            let mut pure_tail = ShiftRegister::new(3, false);
+            let dup_nesting = self.cache.lineages[&n]
+                .iter()
+                .filter_map(|n| {
+                    if n.position != Position::First {
+                        pure_head_broken = true;
+                    }
+                    if n.position != Position::Last {
+                        pure_tail_broken = true;
+                    }
+                    pure_tail.write(n.position == Position::Last && !pure_tail_broken);
+                    pure_head.write(n.position == Position::First && !pure_head_broken);
+
+                    if self.tree.is_duplication(n.id) {
+                        let dcs = self
+                            .tree
+                            .attrs(n.id)
+                            .get("DCS")
+                            .map(|x| x.parse::<f32>().unwrap())
+                            .unwrap_or_default();
+
+                        Some(if *pure_head.read() {
+                            DupNesting::Head(dcs)
+                        } else if *pure_tail.read() {
+                            DupNesting::Tail(dcs)
+                        } else {
+                            DupNesting::Body(dcs)
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            self.cache.duplications.max_nesting =
+                self.cache.duplications.max_nesting.max(dup_nesting.len());
+            self.cache.duplications.nestings.insert(n, dup_nesting);
+        }
+    }
+
+    fn make_tree_line(&self, n: NodeID) -> String {
+        let lineage = &self.cache.lineages[&n];
+        let last_branch_length =
+            self.tree.topological_depth().0 - self.tree.node_topological_depth(n).unwrap() as usize;
+        let mut r = "─".repeat(last_branch_length);
+
+        let mut on_my_line = true;
+        for n in lineage {
+            let is_duplication = self
+                .tree
+                .parent(n.id)
+                .map(|x| self.tree.is_duplication(x))
+                .unwrap_or(false);
+
+            if on_my_line {
+                if n.position != Position::First {
+                    on_my_line = false;
+                }
+
+                if on_my_line {
+                    if is_duplication {
+                        r.push_str("─D");
+                    } else {
+                        r.push_str("─┬");
+                    }
+                } else {
+                    r.push_str(if is_duplication { "─╙" } else { "─└" })
+                }
+            } else {
+                if n.position == Position::First {
+                    if is_duplication {
+                        r.push_str(" ║");
+                    } else {
+                        r.push_str(" │");
+                    }
+                } else {
+                    r.push_str("  ");
+                }
+            }
+        }
+
+        r.chars().rev().collect()
+    }
+
     fn gene_to_row<'a>(
-        graph_line: String,
+        graph_line: &'a str,
         landscape_data: Option<&'a LandscapeData>,
         gene: DispGene,
-        dups_nesting: Vec<f32>,
+        dups_nesting: &'a [DupNesting],
         with_fold_indicator: bool,
         use_symbols: bool,
         highlighters: &[ForthExpr],
@@ -394,13 +550,8 @@ impl TreeView {
             Cell::from(Line::from(
                 dups_nesting
                     .iter()
-                    .map(|x| {
-                        Span::from("│").fg(if *x < 0. {
-                            Color::LightBlue
-                        } else {
-                            Color::Rgb(((1. - x) * 255.0).ceil() as u8, (x * 255.).ceil() as u8, 0)
-                        })
-                    })
+                    .rev()
+                    .map(|x| x.to_span())
                     .collect::<Vec<_>>(),
             )),
             gene.species
@@ -425,83 +576,42 @@ impl TreeView {
     }
 
     fn to_rows(&mut self, f: &mut Frame, t: Rect) {
-        #[derive(Debug)]
-        struct RowContext {
-            current: usize,
-            in_folded: bool,
-        }
-
-        self.screen_to_clade.clear();
-
-        let mut todos = Vec::new();
-        todos.push(RowContext {
-            current: 0,
-            in_folded: false,
-        });
+        self.screen_to_nodes.clear();
 
         let mut rows = Vec::new();
-        while let Some(context) = todos.pop() {
-            let current = self.clades.get(context.current);
-            match current {
-                Clade::Taxon {
-                    dup_nesting,
-                    gene,
-                    graph_line,
-                } => {
-                    self.screen_to_clade.entry(rows.len()).or_default();
-                    let row = Self::gene_to_row(
-                        self.canvas.line(*graph_line),
-                        self.landscape_data.as_ref(),
-                        gene.to_owned(),
-                        dup_nesting.clone(),
-                        false,
-                        self.settings.use_symbols,
-                        &self.highlighters,
-                    );
-                    rows.push(row);
-                }
-                Clade::SubClade { subclades, folded } => {
-                    self.screen_to_clade
-                        .entry(rows.len())
-                        .or_default()
-                        .push(context.current);
-                    if *folded {
-                        if let Clade::Taxon {
-                            graph_line,
-                            dup_nesting,
-                            gene,
-                        } = self.clades.find_first_taxon(context.current)
-                        {
-                            let row = Self::gene_to_row(
-                                self.canvas.line(*graph_line),
-                                self.landscape_data.as_ref(),
-                                gene.to_owned(),
-                                dup_nesting.clone(),
-                                true,
-                                self.settings.use_symbols,
-                                &self.highlighters,
-                            );
-                            rows.push(row);
-                        }
-                    } else {
-                        for subclade in subclades.iter().rev() {
-                            todos.push(RowContext {
-                                current: *subclade,
-                                in_folded: context.in_folded,
-                            });
-                        }
-                    }
-                }
+        let mut y = 0;
+        for n in self.tree.leaves() {
+            let fold_level = *self.cache.folding.fold_level.get(&n).unwrap_or(&0);
+            let folded = fold_level > 0;
+            let lineage_len = self.cache.lineages[&n].len();
+            let first_in_fold = folded
+                && self.cache.lineages[&n][lineage_len - fold_level].position == Position::First;
+            if !folded || first_in_fold {
+                let ancestors = self.cache.lineages[&n]
+                    .iter()
+                    .map(|n| n.id)
+                    .collect::<Vec<_>>();
+                self.screen_to_nodes.insert(y, ancestors);
+                let row = Self::gene_to_row(
+                    &self.cache.tree[&n],
+                    self.landscape_data.as_ref(),
+                    self.cache.genes.get(&n).unwrap().clone(),
+                    &self.cache.duplications.nestings[&n],
+                    false,
+                    self.settings.use_symbols,
+                    &self.highlighters,
+                );
+                rows.push(row);
+                y += 1;
             }
         }
         self.current_len = rows.len();
 
         let tree_depth = self.tree.topological_depth().1;
-        let dups_width = self.max_dup_nesting();
         let widths = [
             Constraint::Length(1),
             Constraint::Length((DEPTH_FACTOR * tree_depth) as u16),
-            Constraint::Length(dups_width),
+            Constraint::Length((self.cache.duplications.max_nesting).try_into().unwrap()),
             Constraint::Fill(1),
             Constraint::Fill(1),
             Constraint::Fill(3),
@@ -520,52 +630,71 @@ impl TreeView {
     }
 
     pub fn toggle_current(&mut self) {
-        let screen_y = self.states.gene_table.selected().unwrap();
+        // let screen_y = self.states.gene_table.selected().unwrap();
 
-        let target_state = !self.screen_to_clade[&screen_y]
-            .iter()
-            .any(|c| self.clades.is_folded(*c));
+        // let target_state = !self.screen_to_clade[&screen_y]
+        //     .iter()
+        //     .any(|c| self.clades.is_folded(*c));
 
-        for clade in self.screen_to_clade.get(&screen_y).unwrap().iter().rev() {
-            if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
-                *folded = target_state;
-            } else {
-                unreachable!()
-            }
-        }
+        // for clade in self.screen_to_clade.get(&screen_y).unwrap().iter().rev() {
+        //     if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
+        //         *folded = target_state;
+        //     } else {
+        //         unreachable!()
+        //     }
+        // }
     }
 
     pub fn fold_current(&mut self) {
-        let screen_y = self.states.gene_table.selected().unwrap();
-        for clade in self.screen_to_clade.get(&screen_y).unwrap().iter().rev() {
-            if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
-                if !*folded {
-                    *folded = true;
-                    return;
-                }
-            } else {
-                unreachable!()
-            }
-        }
+        // let screen_y = self.states.gene_table.selected().unwrap();
+        // if let Some(leaves) = self.cache.folding.folding_points[screen_y].fold() {
+        //     for l in leaves {
+        //         self.cache
+        //             .folding
+        //             .fold_level
+        //             .entry(*l)
+        //             .and_modify(|x| *x += 1);
+        //     }
+        // }
+
+        // for clade in self.screen_to_clade.get(&screen_y).unwrap().iter().rev() {
+        //     if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
+        //         if !*folded {
+        //             *folded = true;
+        //             return;
+        //         }
+        //     } else {
+        //         unreachable!()
+        //     }
+        // }
     }
 
     pub fn unfold_current(&mut self) {
         let screen_y = self.states.gene_table.selected().unwrap();
-        for clade in self.screen_to_clade.get(&screen_y).unwrap().iter() {
-            if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
-                if *folded {
-                    *folded = false;
-                    return;
-                }
-            } else {
-                unreachable!()
+        if let Some(leaves) = self.cache.folding.folding_points[screen_y].unfold() {
+            for l in leaves {
+                self.cache
+                    .folding
+                    .fold_level
+                    .entry(*l)
+                    .and_modify(|x| *x -= 1);
             }
         }
+        // for clade in self.screen_to_clade.get(&screen_y).unwrap().iter() {
+        //     if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
+        //         if *folded {
+        //             *folded = false;
+        //             return;
+        //         }
+        //     } else {
+        //         unreachable!()
+        //     }
+        // }
     }
 
-    fn max_dup_nesting(&self) -> u16 {
-        self.dup_level.iter().map(Vec::len).max().unwrap_or(0) as u16
-    }
+    // fn max_dup_nesting(&self) -> u16 {
+    //     // self.dup_level.iter().map(Vec::len).max().unwrap_or(0) as u16
+    // }
 
     pub fn move_to(&mut self, i: usize) {
         self.states.gene_table.select(Some(i));

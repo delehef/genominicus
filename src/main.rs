@@ -9,6 +9,7 @@ use utils::*;
 mod align;
 mod editor;
 mod render;
+mod shiftreg;
 mod utils;
 
 #[derive(Parser, Debug)]
