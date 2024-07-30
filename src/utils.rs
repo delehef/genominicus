@@ -4,6 +4,7 @@ use colorsys::{Hsl, Rgb};
 use newick::*;
 use once_cell::sync::OnceCell;
 use palette::*;
+use petname::Generator;
 use rand::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
@@ -116,7 +117,7 @@ pub fn make_petnamemap(tree: &NewickTree, genes: &GeneCache) -> PetnameMap {
             {
                 petmap
                     .entry(f)
-                    .or_insert_with(|| petname::Petnames::default().generate_one(2, "-"));
+                    .or_insert_with(|| petname::Petnames::default().generate_one(2, "-").unwrap());
             }
         }
     }
