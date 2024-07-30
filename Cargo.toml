@@ -41,3 +41,9 @@ svarog = "0.6"
 syntesuite = "0.6"
 thiserror = "1.0.38"
 tui-textarea = "0.5.1"
+
+[package.metadata.release]
+tag-prefix = ""
+publish = false
+pre-release-hook = ["git-cliff", "-o", "CHANGELOG.md", "--tag", "{{version}}"]
+allow-branch = ["master"]
