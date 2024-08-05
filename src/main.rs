@@ -48,7 +48,7 @@ enum Commands {
         id_pattern: String,
 
         /// regex to extract species name from genome files; must contain a named capture group `species`
-        #[clap(long, default_value_t = String::from("(?P<species>.*)\\.(gff3|bed)"))]
+        #[clap(long, default_value_t = String::from("(?P<species>.*)\\.(gff3|bed|chrom)"))]
         species_pattern: String,
     },
     /// Render one or more gene trees, with their syntenic environment stored in the provided database
