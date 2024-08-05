@@ -1,6 +1,6 @@
 [package]
 name = "genominicus"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Franklin Delehelle <delehelle@ens.fr>"]
 edition = "2021"
 license = "CECILL-2.1"
