@@ -85,10 +85,10 @@ impl Relation {
 
     fn apply(&self, args: &[String]) -> bool {
         match self {
-            Relation::StartsWith => args[0].starts_with(&args[1]),
-            Relation::Equal => args[0] == args[1],
-            Relation::EndsWith => args[0].ends_with(&args[1]),
-            Relation::Contains => args[0].contains(&args[1]),
+            Relation::StartsWith => args[0].to_lowercase().starts_with(&args[1].to_lowercase()),
+            Relation::Equal => args[0].to_lowercase() == args[1].to_lowercase(),
+            Relation::EndsWith => args[0].to_lowercase().ends_with(&args[1].to_lowercase()),
+            Relation::Contains => args[0].to_lowercase().contains(&args[1].to_lowercase()),
         }
     }
 }
@@ -155,7 +155,6 @@ impl ForthExpr {
                     .collect::<Option<Vec<_>>>();
                 args.map(|args| Either::Right(f.apply(&args)))
             }
-            // Node::Column(_, column) => project(i, column).map(Either::Left),
             ForthExpr::Projector(field) => match field.as_str() {
                 "species" => Some(Either::Left(gene.species.clone())),
                 "id" => Some(Either::Left(gene.name.clone())),
@@ -285,4 +284,25 @@ pub fn parse(s: &str) -> Result<ForthExpr, Error> {
     }
 
     Ok(stack[0].to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::editor::widgets::treeview::DispGene;
+
+    use super::parse;
+
+    #[test]
+    fn highlight() {
+        let expr = parse(".species Ory ^").unwrap();
+
+        assert!(expr
+            .eval(&DispGene {
+                name: "ASDFG".into(),
+                species: "Oryzias latipes".into(),
+            })
+            .unwrap()
+            .right()
+            .unwrap());
+    }
 }

@@ -244,8 +244,8 @@ fn main() -> Result<()> {
             database,
             use_symbols,
         } => {
-            let tree =
-                newick::one_from_filename(&file).context(format!("failed to read `{}`", &file))?;
+            let tree = newick::one_from_filename(&file)
+                .with_context(|| format!("failed to read `{}`", &file))?;
 
             let synteny = if let Some(database) = database {
                 println!("Computing synteny information...");
