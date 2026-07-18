@@ -49,31 +49,6 @@ fn gene_to_char(family: usize, strand: syntesuite::Strand, symbol: bool) -> char
     }
 }
 
-#[derive(Default, Clone)]
-struct FoldingPoint {
-    clade: Vec<Vec<NodeID>>,
-    point: usize,
-}
-impl FoldingPoint {
-    fn fold(&mut self) -> Option<&[NodeID]> {
-        if self.point == self.clade.len() {
-            return None;
-        } else {
-            self.point += 1;
-            return Some(&self.clade[self.point - 1]);
-        }
-    }
-
-    fn unfold(&mut self) -> Option<&[NodeID]> {
-        if self.point == 0 {
-            return None;
-        } else {
-            self.point -= 1;
-            return Some(&self.clade[self.point]);
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct DispGene {
     pub name: String,
@@ -95,7 +70,6 @@ enum Clade {
     },
     SubClade {
         subclades: Vec<usize>,
-        folded: bool,
         id: NodeID,
     },
 }
@@ -109,7 +83,6 @@ impl CladeHierarchy {
         Self {
             clades: vec![Clade::SubClade {
                 subclades: vec![],
-                folded: false,
                 id: 1,
             }],
         }
@@ -126,13 +99,6 @@ impl CladeHierarchy {
             unreachable!()
         }
         new
-    }
-
-    pub fn is_folded(&self, i: usize) -> bool {
-        match &self.clades[i] {
-            Clade::Taxon { .. } => false,
-            Clade::SubClade { folded, .. } => *folded,
-        }
     }
 
     fn get(&self, i: usize) -> &Clade {
@@ -171,18 +137,11 @@ struct DuplicationsCache {
     max_nesting: usize,
 }
 
-#[derive(Default)]
-struct FoldCache {
-    fold_level: HashMap<NodeID, usize>,
-    folding_points: Vec<FoldingPoint>,
-}
-
 struct Caches {
     genes: HashMap<NodeID, DispGene>,
     lineages: HashMap<NodeID, Vec<NodeContext>>,
     tree: HashMap<NodeID, String>,
     duplications: DuplicationsCache,
-    folding: FoldCache,
 }
 
 struct States {
@@ -302,7 +261,6 @@ impl TreeView {
                 lineages,
                 tree: Default::default(),
                 duplications: Default::default(),
-                folding: Default::default(),
             },
             tree,
             landscape_data,
@@ -314,7 +272,6 @@ impl TreeView {
         };
         r.cache_tree_graph();
         r.cache_dup_nesting();
-        r.cache_folding();
         r
     }
 
@@ -328,20 +285,6 @@ impl TreeView {
             .leaves()
             .map(|n| (n, self.make_tree_line(n)))
             .collect();
-    }
-
-    fn cache_folding(&mut self) {
-        self.cache.folding.folding_points = Vec::with_capacity(self.tree.len());
-        for (y, n) in self.tree.leaves().enumerate() {
-            self.cache.folding.folding_points.push(FoldingPoint {
-                clade: self.cache.lineages[&n]
-                    .iter()
-                    .map(|a| self.tree.leaves_of(a.id))
-                    .collect(),
-                point: 0,
-            });
-            self.cache.folding.fold_level.insert(n, 0);
-        }
     }
 
     fn cache_dup_nesting(&mut self) {
@@ -581,29 +524,22 @@ impl TreeView {
         let mut rows = Vec::new();
         let mut y = 0;
         for n in self.tree.leaves() {
-            let fold_level = *self.cache.folding.fold_level.get(&n).unwrap_or(&0);
-            let folded = fold_level > 0;
-            let lineage_len = self.cache.lineages[&n].len();
-            let first_in_fold = folded
-                && self.cache.lineages[&n][lineage_len - fold_level].position == Position::First;
-            if !folded || first_in_fold {
-                let ancestors = self.cache.lineages[&n]
-                    .iter()
-                    .map(|n| n.id)
-                    .collect::<Vec<_>>();
-                self.screen_to_nodes.insert(y, ancestors);
-                let row = Self::gene_to_row(
-                    &self.cache.tree[&n],
-                    self.landscape_data.as_ref(),
-                    self.cache.genes.get(&n).unwrap().clone(),
-                    &self.cache.duplications.nestings[&n],
-                    false,
-                    self.settings.use_symbols,
-                    &self.highlighters,
-                );
-                rows.push(row);
-                y += 1;
-            }
+            let ancestors = self.cache.lineages[&n]
+                .iter()
+                .map(|n| n.id)
+                .collect::<Vec<_>>();
+            self.screen_to_nodes.insert(y, ancestors);
+            let row = Self::gene_to_row(
+                &self.cache.tree[&n],
+                self.landscape_data.as_ref(),
+                self.cache.genes.get(&n).unwrap().clone(),
+                &self.cache.duplications.nestings[&n],
+                false,
+                self.settings.use_symbols,
+                &self.highlighters,
+            );
+            rows.push(row);
+            y += 1;
         }
         self.current_len = rows.len();
 
@@ -628,73 +564,6 @@ impl TreeView {
             .highlight_style(Style::new().underlined());
         f.render_stateful_widget(table, t, &mut self.states.gene_table);
     }
-
-    pub fn toggle_current(&mut self) {
-        // let screen_y = self.states.gene_table.selected().unwrap();
-
-        // let target_state = !self.screen_to_clade[&screen_y]
-        //     .iter()
-        //     .any(|c| self.clades.is_folded(*c));
-
-        // for clade in self.screen_to_clade.get(&screen_y).unwrap().iter().rev() {
-        //     if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
-        //         *folded = target_state;
-        //     } else {
-        //         unreachable!()
-        //     }
-        // }
-    }
-
-    pub fn fold_current(&mut self) {
-        // let screen_y = self.states.gene_table.selected().unwrap();
-        // if let Some(leaves) = self.cache.folding.folding_points[screen_y].fold() {
-        //     for l in leaves {
-        //         self.cache
-        //             .folding
-        //             .fold_level
-        //             .entry(*l)
-        //             .and_modify(|x| *x += 1);
-        //     }
-        // }
-
-        // for clade in self.screen_to_clade.get(&screen_y).unwrap().iter().rev() {
-        //     if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
-        //         if !*folded {
-        //             *folded = true;
-        //             return;
-        //         }
-        //     } else {
-        //         unreachable!()
-        //     }
-        // }
-    }
-
-    pub fn unfold_current(&mut self) {
-        let screen_y = self.states.gene_table.selected().unwrap();
-        if let Some(leaves) = self.cache.folding.folding_points[screen_y].unfold() {
-            for l in leaves {
-                self.cache
-                    .folding
-                    .fold_level
-                    .entry(*l)
-                    .and_modify(|x| *x -= 1);
-            }
-        }
-        // for clade in self.screen_to_clade.get(&screen_y).unwrap().iter() {
-        //     if let Clade::SubClade { ref mut folded, .. } = self.clades.get_mut(*clade) {
-        //         if *folded {
-        //             *folded = false;
-        //             return;
-        //         }
-        //     } else {
-        //         unreachable!()
-        //     }
-        // }
-    }
-
-    // fn max_dup_nesting(&self) -> u16 {
-    //     // self.dup_level.iter().map(Vec::len).max().unwrap_or(0) as u16
-    // }
 
     pub fn move_to(&mut self, i: usize) {
         self.states.gene_table.select(Some(i));

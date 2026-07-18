@@ -55,12 +55,6 @@ impl Mode {
                 "[S]".yellow().bold(),
                 "ymbols".into(),
                 " :: ".bold().white(),
-                "[TAB]".yellow().bold(),
-                " cycle fold  ".into(),
-                "←".yellow().bold(),
-                " fold 1×  ".into(),
-                "→".yellow().bold(),
-                " unfold 1×  ".into(),
                 "[q]".red().bold(),
                 "uit ".into(),
             ]),
@@ -160,9 +154,6 @@ impl Editor {
                 KeyCode::PageDown => self.plot.next(10),
                 KeyCode::Home => self.plot.top(),
                 KeyCode::End => self.plot.bottom(),
-                KeyCode::Left => self.plot.fold_current(),
-                KeyCode::Right => self.plot.unfold_current(),
-                KeyCode::Tab => self.plot.toggle_current(),
                 _ => {}
             },
             Mode::Highlighter => {
