@@ -194,9 +194,13 @@ pub struct TreeView {
     pub settings: TreeViewSettings,
     landscape_data: Option<LandscapeData>,
     current_len: usize,
-    // screen coordinate -> inner nodes IDs
+    /// screen coordinate -> inner nodes IDs
     screen_to_nodes: HashMap<usize, Vec<usize>>,
+    /// A list of selectors to highlight the matching genes
     pub highlighters: Vec<ForthExpr>,
+    /// A list of filters to focus on selected clades/genes
+    pub filters: Vec<ForthExpr>,
+    /// UI state
     states: States,
 }
 impl TreeView {

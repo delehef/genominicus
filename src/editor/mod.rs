@@ -28,26 +28,25 @@ enum Screen {
     TreeView,
 }
 
+#[derive(Default)]
 struct States {
-    highlighter: String,
-}
-impl States {
-    fn new() -> Self {
-        States {
-            highlighter: String::new(),
-        }
-    }
+    current_highlighter: String,
+    current_filter: String,
 }
 
 #[derive(Copy, Clone)]
 enum Mode {
     Root,
     Highlighter,
+    Filter,
 }
 impl Mode {
     fn help(&self) -> Line {
         match self {
             Mode::Root => Line::from(vec![
+                "[f]".yellow().bold(),
+                "ilter".into(),
+                " :: ".bold().white(),
                 "[h]".yellow().bold(),
                 "ighlight".into(),
                 " :: ".bold().white(),
@@ -60,6 +59,19 @@ impl Mode {
             ]),
             Mode::Highlighter => Line::from(vec![
                 "Highlights :: ".bold().white(),
+                "[a]".yellow().bold(),
+                "ppend ".into(),
+                "[c]".yellow().bold(),
+                "lear ".into(),
+                "[p]".yellow().bold(),
+                "op ".into(),
+                "[e]".yellow().bold(),
+                "dit last ".into(),
+                "[q]".red().bold(),
+                " back".into(),
+            ]),
+            Mode::Filter => Line::from(vec![
+                "Filter :: ".bold().white(),
                 "[a]".yellow().bold(),
                 "ppend ".into(),
                 "[c]".yellow().bold(),
@@ -169,7 +181,7 @@ impl Editor {
                         let expr = widgets::scan::ScanInput::new(String::new())
                             .run(&mut t, self.minibuffer);
                         if let Some((source, expr)) = expr {
-                            self.states.highlighter = source;
+                            self.states.current_highlighter = source;
                             self.plot.highlighters.push(expr);
                         }
                     }
@@ -187,12 +199,57 @@ impl Editor {
                             )
                             .unwrap();
 
+                            if let Some((source, expr)) = widgets::scan::ScanInput::new(
+                                self.states.current_highlighter.clone(),
+                            )
+                            .run(&mut t, self.minibuffer)
+                            {
+                                self.states.current_highlighter = source;
+                                self.plot.highlighters.push(expr);
+                            }
+                        }
+                    }
+                    _ => {}
+                };
+                self.mode = Mode::Root
+            }
+            Mode::Filter => {
+                match key.code {
+                    KeyCode::Char('a') => {
+                        let mut t = Terminal::with_options(
+                            CrosstermBackend::new(std::io::stdout()),
+                            TerminalOptions {
+                                viewport: Viewport::Fixed(self.minibuffer),
+                            },
+                        )
+                        .unwrap();
+                        let expr = widgets::scan::ScanInput::new(String::new())
+                            .run(&mut t, self.minibuffer);
+                        if let Some((source, expr)) = expr {
+                            self.states.current_filter = source;
+                            self.plot.filters.push(expr);
+                        }
+                    }
+                    KeyCode::Char('c') => self.plot.filters.clear(),
+                    KeyCode::Char('p') => {
+                        self.plot.filters.pop();
+                    }
+                    KeyCode::Char('e') => {
+                        if self.plot.filters.pop().is_some() {
+                            let mut t = Terminal::with_options(
+                                CrosstermBackend::new(std::io::stdout()),
+                                TerminalOptions {
+                                    viewport: Viewport::Fixed(self.minibuffer),
+                                },
+                            )
+                            .unwrap();
+
                             if let Some((source, expr)) =
-                                widgets::scan::ScanInput::new(self.states.highlighter.clone())
+                                widgets::scan::ScanInput::new(self.states.current_filter.clone())
                                     .run(&mut t, self.minibuffer)
                             {
-                                self.states.highlighter = source;
-                                self.plot.highlighters.push(expr);
+                                self.states.current_filter = source;
+                                self.plot.filters.push(expr);
                             }
                         }
                     }
