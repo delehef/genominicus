@@ -19,7 +19,6 @@ use crate::utils::{ColorMap, GeneCache};
 
 use self::widgets::treeview::{LandscapeData, TreeView, TreeViewSettings};
 
-mod canvas;
 mod forth;
 mod utils;
 pub(super) mod widgets;
@@ -31,17 +30,17 @@ enum Screen {
 #[derive(Default)]
 struct States {
     current_highlighter: String,
-    current_filter: String,
+    current_narrow: String,
 }
 
 #[derive(Copy, Clone)]
 enum Mode {
     Root,
     Highlighter,
-    Filter,
+    Narrow,
 }
 impl Mode {
-    fn help(&self) -> Line {
+    fn help(&'_ self) -> Line<'_> {
         match self {
             Mode::Root => Line::from(vec![
                 "[f]".yellow().bold(),
@@ -70,16 +69,12 @@ impl Mode {
                 "[q]".red().bold(),
                 " back".into(),
             ]),
-            Mode::Filter => Line::from(vec![
-                "Filter :: ".bold().white(),
-                "[a]".yellow().bold(),
-                "ppend ".into(),
+            Mode::Narrow => Line::from(vec![
+                "Narrow :: ".bold().white(),
                 "[c]".yellow().bold(),
                 "lear ".into(),
-                "[p]".yellow().bold(),
-                "op ".into(),
                 "[e]".yellow().bold(),
-                "dit last ".into(),
+                "dit ".into(),
                 "[q]".red().bold(),
                 " back".into(),
             ]),
@@ -97,7 +92,6 @@ struct Editor {
     name: String,
     tree: Rc<NewickTree>,
     plot: TreeView,
-    screen: Screen,
     states: States,
     minibuffer: Rect,
 }
@@ -121,8 +115,7 @@ impl Editor {
             name,
             tree,
             plot,
-            screen: Screen::TreeView,
-            states: States::new(),
+            states: Default::default(),
             minibuffer: Default::default(),
         }
     }
@@ -160,6 +153,7 @@ impl Editor {
                     self.plot.settings.use_symbols = !self.plot.settings.use_symbols;
                 }
                 KeyCode::Char('h') => self.mode = Mode::Highlighter,
+                KeyCode::Char('f') => self.mode = Mode::Narrow,
                 KeyCode::Up => self.plot.prev(1),
                 KeyCode::Down => self.plot.next(1),
                 KeyCode::PageUp => self.plot.prev(10),
@@ -213,9 +207,10 @@ impl Editor {
                 };
                 self.mode = Mode::Root
             }
-            Mode::Filter => {
+            Mode::Narrow => {
                 match key.code {
-                    KeyCode::Char('a') => {
+                    KeyCode::Char('c') => self.plot.narrowing = None,
+                    KeyCode::Char('e') => {
                         let mut t = Terminal::with_options(
                             CrosstermBackend::new(std::io::stdout()),
                             TerminalOptions {
@@ -223,34 +218,13 @@ impl Editor {
                             },
                         )
                         .unwrap();
-                        let expr = widgets::scan::ScanInput::new(String::new())
-                            .run(&mut t, self.minibuffer);
-                        if let Some((source, expr)) = expr {
-                            self.states.current_filter = source;
-                            self.plot.filters.push(expr);
-                        }
-                    }
-                    KeyCode::Char('c') => self.plot.filters.clear(),
-                    KeyCode::Char('p') => {
-                        self.plot.filters.pop();
-                    }
-                    KeyCode::Char('e') => {
-                        if self.plot.filters.pop().is_some() {
-                            let mut t = Terminal::with_options(
-                                CrosstermBackend::new(std::io::stdout()),
-                                TerminalOptions {
-                                    viewport: Viewport::Fixed(self.minibuffer),
-                                },
-                            )
-                            .unwrap();
 
-                            if let Some((source, expr)) =
-                                widgets::scan::ScanInput::new(self.states.current_filter.clone())
-                                    .run(&mut t, self.minibuffer)
-                            {
-                                self.states.current_filter = source;
-                                self.plot.filters.push(expr);
-                            }
+                        if let Some((source, expr)) =
+                            widgets::scan::ScanInput::new(self.states.current_narrow.clone())
+                                .run(&mut t, self.minibuffer)
+                        {
+                            self.states.current_narrow = source;
+                            self.plot.narrowing = Some(expr);
                         }
                     }
                     _ => {}

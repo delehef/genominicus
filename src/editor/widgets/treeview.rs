@@ -60,74 +60,15 @@ pub struct LandscapeData {
     pub colors: ColorMap,
 }
 
-#[derive(Debug)]
-enum Clade {
-    Taxon {
-        graph_line: usize,
-        dup_nesting: Vec<f32>,
-        gene: DispGene,
-        id: NodeID,
-    },
-    SubClade {
-        subclades: Vec<usize>,
-        id: NodeID,
-    },
-}
-
-#[derive(Debug)]
-struct CladeHierarchy {
-    clades: Vec<Clade>,
-}
-impl CladeHierarchy {
-    fn new() -> Self {
-        Self {
-            clades: vec![Clade::SubClade {
-                subclades: vec![],
-                id: 1,
-            }],
-        }
-    }
-    fn append_in(&mut self, clade: Clade, parent: usize) -> usize {
-        let new = self.clades.len();
-        self.clades.push(clade);
-        if let Clade::SubClade {
-            ref mut subclades, ..
-        } = &mut self.clades[parent]
-        {
-            subclades.push(new);
-        } else {
-            unreachable!()
-        }
-        new
-    }
-
-    fn get(&self, i: usize) -> &Clade {
-        &self.clades[i]
-    }
-
-    fn get_mut(&mut self, i: usize) -> &mut Clade {
-        &mut self.clades[i]
-    }
-
-    fn find_first_taxon(&self, i: usize) -> &Clade {
-        match &self.clades[i] {
-            taxon @ Clade::Taxon { .. } => taxon,
-            Clade::SubClade { subclades, .. } => self.find_first_taxon(subclades[0]),
-        }
-    }
-}
-
 const DEPTH_FACTOR: usize = 2;
 
 #[derive(PartialEq, Eq)]
 enum Position {
     First,
     Last,
-    Other,
 }
 struct NodeContext {
     id: NodeID,
-    depth: i64,
     position: Position,
 }
 
@@ -140,7 +81,7 @@ struct DuplicationsCache {
 struct Caches {
     genes: HashMap<NodeID, DispGene>,
     lineages: HashMap<NodeID, Vec<NodeContext>>,
-    tree: HashMap<NodeID, String>,
+    tree_chars: HashMap<NodeID, String>,
     duplications: DuplicationsCache,
 }
 
@@ -169,7 +110,7 @@ impl DupNesting {
         }
     }
 
-    fn to_span(&self) -> Span {
+    fn to_span(&'_ self) -> Span<'_> {
         let score = self.score();
         Span::from(match self {
             DupNesting::Head(_) => "┬",
@@ -199,7 +140,7 @@ pub struct TreeView {
     /// A list of selectors to highlight the matching genes
     pub highlighters: Vec<ForthExpr>,
     /// A list of filters to focus on selected clades/genes
-    pub filters: Vec<ForthExpr>,
+    pub narrowing: Option<ForthExpr>,
     /// UI state
     states: States,
 }
@@ -241,7 +182,6 @@ impl TreeView {
                         .into_iter()
                         .map(|n| NodeContext {
                             id: n,
-                            depth: tree.node_topological_depth(n).unwrap(),
                             position: {
                                 if let Some(parent) = tree.parent(n) {
                                     if tree.children(parent).unwrap()[0] == n {
@@ -263,7 +203,7 @@ impl TreeView {
             cache: Caches {
                 genes,
                 lineages,
-                tree: Default::default(),
+                tree_chars: Default::default(),
                 duplications: Default::default(),
             },
             tree,
@@ -271,7 +211,8 @@ impl TreeView {
             settings,
             current_len: leave_count,
             screen_to_nodes: Default::default(),
-            highlighters: Vec::new(),
+            highlighters: Default::default(),
+            narrowing: Default::default(),
             states: States::new(leave_count),
         };
         r.cache_tree_graph();
@@ -284,7 +225,7 @@ impl TreeView {
     }
 
     fn cache_tree_graph(&mut self) {
-        self.cache.tree = self
+        self.cache.tree_chars = self
             .tree
             .leaves()
             .map(|n| (n, self.make_tree_line(n)))
@@ -294,7 +235,6 @@ impl TreeView {
     fn cache_dup_nesting(&mut self) {
         self.cache.duplications.nestings.clear();
         for n in self.tree.leaves() {
-            // let mut pure_head = ShiftRegister::new(1);
             let mut pure_head_broken = false;
             let mut pure_tail_broken = false;
             let mut pure_head = ShiftRegister::new(3, false);
@@ -338,6 +278,7 @@ impl TreeView {
         }
     }
 
+    // TODO: add is_narrowed here
     fn make_tree_line(&self, n: NodeID) -> String {
         let lineage = &self.cache.lineages[&n];
         let last_branch_length =
@@ -391,6 +332,14 @@ impl TreeView {
         use_symbols: bool,
         highlighters: &[ForthExpr],
     ) -> Row<'a> {
+        fn percent_to_rgb((r, g, b): (f32, f32, f32)) -> Color {
+            Color::Rgb(
+                (r * 255.0).floor() as u8,
+                (g * 255.0).floor() as u8,
+                (b * 255.0).floor() as u8,
+            )
+        }
+
         const HL_COLORS: [Color; 7] = [
             Color::LightBlue,
             Color::LightRed,
@@ -417,33 +366,26 @@ impl TreeView {
                             gene_to_char(g.family, g.strand, use_symbols)
                         ))
                         .fg({
-                            let color = landscape_data
-                                .unwrap()
-                                .colors
-                                .get(&g.family)
-                                .unwrap()
-                                .to_percent();
-
-                            Color::Rgb(
-                                (color.0 * 255.0).floor() as u8,
-                                (color.1 * 255.0).floor() as u8,
-                                (color.2 * 255.0).floor() as u8,
+                            percent_to_rgb(
+                                landscape_data
+                                    .unwrap()
+                                    .colors
+                                    .get(&g.family)
+                                    .unwrap()
+                                    .to_percent(),
                             )
                         })
                     }))
                     .chain(
                         std::iter::once(
                             format!(" {} ", gene_to_char(*family, *strand, use_symbols)).fg({
-                                let color = landscape_data
-                                    .unwrap()
-                                    .colors
-                                    .get(family)
-                                    .unwrap()
-                                    .to_percent();
-                                Color::Rgb(
-                                    (color.0 * 255.0).floor() as u8,
-                                    (color.1 * 255.0).floor() as u8,
-                                    (color.2 * 255.0).floor() as u8,
+                                percent_to_rgb(
+                                    landscape_data
+                                        .unwrap()
+                                        .colors
+                                        .get(family)
+                                        .unwrap()
+                                        .to_percent(),
                                 )
                             }),
                         )
@@ -453,16 +395,13 @@ impl TreeView {
                                 gene_to_char(g.family, g.strand, use_symbols)
                             ))
                             .fg({
-                                let color = landscape_data
-                                    .unwrap()
-                                    .colors
-                                    .get(&g.family)
-                                    .unwrap()
-                                    .to_percent();
-                                Color::Rgb(
-                                    (color.0 * 255.0).floor() as u8,
-                                    (color.1 * 255.0).floor() as u8,
-                                    (color.2 * 255.0).floor() as u8,
+                                percent_to_rgb(
+                                    landscape_data
+                                        .unwrap()
+                                        .colors
+                                        .get(&g.family)
+                                        .unwrap()
+                                        .to_percent(),
                                 )
                             })
                         }))
@@ -526,15 +465,14 @@ impl TreeView {
         self.screen_to_nodes.clear();
 
         let mut rows = Vec::new();
-        let mut y = 0;
-        for n in self.tree.leaves() {
+        for (y, n) in self.tree.leaves().enumerate() {
             let ancestors = self.cache.lineages[&n]
                 .iter()
                 .map(|n| n.id)
                 .collect::<Vec<_>>();
             self.screen_to_nodes.insert(y, ancestors);
             let row = Self::gene_to_row(
-                &self.cache.tree[&n],
+                &self.cache.tree_chars[&n],
                 self.landscape_data.as_ref(),
                 self.cache.genes.get(&n).unwrap().clone(),
                 &self.cache.duplications.nestings[&n],
@@ -543,7 +481,6 @@ impl TreeView {
                 &self.highlighters,
             );
             rows.push(row);
-            y += 1;
         }
         self.current_len = rows.len();
 
@@ -566,7 +503,7 @@ impl TreeView {
             )
             .highlight_symbol(">>")
             .highlight_style(Style::new().underlined());
-        f.render_stateful_widget(table, t, &mut self.states.gene_table);
+        f.render_stateful_widget(&table, t, &mut self.states.gene_table);
     }
 
     pub fn move_to(&mut self, i: usize) {

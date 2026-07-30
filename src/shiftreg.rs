@@ -3,17 +3,6 @@ pub struct ShiftRegister<T> {
     i: usize,
 }
 
-impl<T: Default> ShiftRegister<T> {
-    pub fn default(shift: usize) -> Self {
-        assert!(shift > 0);
-        Self {
-            reg: std::iter::repeat_with(|| T::default())
-                .take(shift)
-                .collect(),
-            i: 0,
-        }
-    }
-}
 impl<T: Clone> ShiftRegister<T> {
     pub fn new(shift: usize, init: T) -> Self {
         assert!(shift > 0);
