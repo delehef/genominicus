@@ -4,7 +4,10 @@ use clap::*;
 use colored::Colorize;
 use editor::widgets::treeview::TreeViewSettings;
 use log::*;
-use utils::*;
+
+use crate::utils::{
+    make_colormap, make_colormap_per_duplication, make_genes_cache, make_petnamemap, RenderSettings,
+};
 
 mod align;
 mod editor;

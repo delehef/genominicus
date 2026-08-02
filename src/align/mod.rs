@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use petgraph::prelude::*;
 
-use super::*;
 use crate::align::poa::*;
+use crate::utils::PoaElt;
 
 mod poa;
 

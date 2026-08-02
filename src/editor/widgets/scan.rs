@@ -1,3 +1,4 @@
+/// The `ScanInput` widget presents the user with a line input for a Fort expression, that is validated on the fly.
 use crate::editor::forth::{self, ForthExpr};
 use anyhow::Context;
 use ratatui::{

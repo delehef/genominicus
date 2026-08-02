@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal, TerminalOptions, Viewport,
 };
-use std::{io, rc::Rc};
+use std::io;
 
 use crate::utils::{ColorMap, GeneCache};
 
@@ -90,7 +90,6 @@ pub struct Settings {
 struct Editor {
     mode: Mode,
     name: String,
-    tree: Rc<NewickTree>,
     plot: TreeView,
     states: States,
     minibuffer: Rect,
@@ -107,13 +106,11 @@ impl Editor {
         } else {
             None
         };
-        let tree = Rc::new(tree);
-        let plot = TreeView::from_newick(tree.clone(), settings.tree, landscape_data);
+        let plot = TreeView::from_newick(tree, settings.tree, landscape_data);
 
         Self {
             mode: Mode::Root,
             name,
-            tree,
             plot,
             states: Default::default(),
             minibuffer: Default::default(),
@@ -137,7 +134,7 @@ impl Editor {
                 .title(Line::from(vec![
                     self.name.as_str().bold(),
                     ": ".into(),
-                    self.tree.leaves().count().to_string().into(),
+                    self.plot.len().to_string().into(),
                     " genes".into(),
                 ])),
         );

@@ -6,11 +6,13 @@ use ratatui::{
     widgets::{Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState},
     Frame,
 };
-use std::{collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
+use std::{cell::OnceCell, collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
 use syntesuite::genebook::Gene;
 
 use crate::{
-    editor::forth::ForthExpr, name2color, shiftreg::ShiftRegister, ColorMap, GeneCache, WINDOW,
+    editor::forth::ForthExpr,
+    shiftreg::ShiftRegister,
+    utils::{name2color, ColorMap, GeneCache, WINDOW},
 };
 
 const BLOCKS: &[Range<u32>] = &[
@@ -131,10 +133,10 @@ impl DupNesting {
 
 pub struct TreeView {
     cache: Caches,
-    tree: Rc<NewickTree>,
+    tree: NewickTree,
+    narrowed_tree: OnceCell<Rc<NewickTree>>,
     pub settings: TreeViewSettings,
     landscape_data: Option<LandscapeData>,
-    current_len: usize,
     /// screen coordinate -> inner nodes IDs
     screen_to_nodes: HashMap<usize, Vec<usize>>,
     /// A list of selectors to highlight the matching genes
@@ -146,7 +148,7 @@ pub struct TreeView {
 }
 impl TreeView {
     pub fn from_newick(
-        tree: Rc<NewickTree>,
+        tree: NewickTree,
         settings: TreeViewSettings,
         landscape_data: Option<LandscapeData>,
     ) -> Self {
@@ -157,8 +159,6 @@ impl TreeView {
                 .map(|c| char::from_u32(c).unwrap())
                 .collect()
         });
-
-        let leave_count = tree.leaves().count();
 
         let genes = tree
             .leaves()
@@ -199,6 +199,7 @@ impl TreeView {
             })
             .collect();
 
+        let leaves_count = tree.len();
         let mut r = Self {
             cache: Caches {
                 genes,
@@ -207,21 +208,25 @@ impl TreeView {
                 duplications: Default::default(),
             },
             tree,
+            narrowed_tree: Default::default(),
             landscape_data,
             settings,
-            current_len: leave_count,
             screen_to_nodes: Default::default(),
             highlighters: Default::default(),
             narrowing: Default::default(),
-            states: States::new(leave_count),
+            states: States::new(leaves_count),
         };
         r.cache_tree_graph();
         r.cache_dup_nesting();
         r
     }
 
+    fn tree(&self) -> Rc<NewickTree> {
+        todo!()
+    }
+
     pub fn len(&self) -> usize {
-        self.current_len
+        self.tree().len()
     }
 
     fn cache_tree_graph(&mut self) {
@@ -234,7 +239,7 @@ impl TreeView {
 
     fn cache_dup_nesting(&mut self) {
         self.cache.duplications.nestings.clear();
-        for n in self.tree.leaves() {
+        for n in self.tree().leaves() {
             let mut pure_head_broken = false;
             let mut pure_tail_broken = false;
             let mut pure_head = ShiftRegister::new(3, false);
@@ -251,9 +256,9 @@ impl TreeView {
                     pure_tail.write(n.position == Position::Last && !pure_tail_broken);
                     pure_head.write(n.position == Position::First && !pure_head_broken);
 
-                    if self.tree.is_duplication(n.id) {
+                    if self.tree().is_duplication(n.id) {
                         let dcs = self
-                            .tree
+                            .tree()
                             .attrs(n.id)
                             .get("DCS")
                             .map(|x| x.parse::<f32>().unwrap())
@@ -278,19 +283,18 @@ impl TreeView {
         }
     }
 
-    // TODO: add is_narrowed here
     fn make_tree_line(&self, n: NodeID) -> String {
         let lineage = &self.cache.lineages[&n];
-        let last_branch_length =
-            self.tree.topological_depth().0 - self.tree.node_topological_depth(n).unwrap() as usize;
+        let last_branch_length = self.tree().topological_depth().0
+            - self.tree().node_topological_depth(n).unwrap() as usize;
         let mut r = "─".repeat(last_branch_length);
 
         let mut on_my_line = true;
         for n in lineage {
             let is_duplication = self
-                .tree
+                .tree()
                 .parent(n.id)
-                .map(|x| self.tree.is_duplication(x))
+                .map(|x| self.tree().is_duplication(x))
                 .unwrap_or(false);
 
             if on_my_line {
@@ -349,6 +353,7 @@ impl TreeView {
             Color::LightMagenta,
             Color::Gray,
         ];
+
         let landscape = if let Some(Gene {
             strand,
             left_landscape,
@@ -465,7 +470,7 @@ impl TreeView {
         self.screen_to_nodes.clear();
 
         let mut rows = Vec::new();
-        for (y, n) in self.tree.leaves().enumerate() {
+        for (y, n) in self.tree().leaves().enumerate() {
             let ancestors = self.cache.lineages[&n]
                 .iter()
                 .map(|n| n.id)
@@ -482,9 +487,8 @@ impl TreeView {
             );
             rows.push(row);
         }
-        self.current_len = rows.len();
 
-        let tree_depth = self.tree.topological_depth().1;
+        let tree_depth = self.tree().topological_depth().1;
         let widths = [
             Constraint::Length(1),
             Constraint::Length((DEPTH_FACTOR * tree_depth) as u16),
@@ -506,11 +510,13 @@ impl TreeView {
         f.render_stateful_widget(&table, t, &mut self.states.gene_table);
     }
 
+    /// Move the cursor to the given row in the table.
     pub fn move_to(&mut self, i: usize) {
         self.states.gene_table.select(Some(i));
         self.states.scrollbar = self.states.scrollbar.position(i);
     }
 
+    /// Move the cursor one line up in the table.
     pub fn prev(&mut self, count: usize) {
         let i = self
             .states
@@ -521,6 +527,7 @@ impl TreeView {
         self.move_to(i);
     }
 
+    /// Move the cursor one line down in the table.
     pub fn next(&mut self, count: usize) {
         let i = self
             .states
@@ -531,14 +538,17 @@ impl TreeView {
         self.move_to(i);
     }
 
+    /// Move the cursor to the beginning of the table.
     pub fn top(&mut self) {
         self.move_to(0);
     }
 
+    /// Move the cursor to the last line of the table.
     pub fn bottom(&mut self) {
         self.move_to(self.len() - 1);
     }
 
+    /// Render the widget in the provided [`Rect`] within the [`Frame`].
     pub fn render(&mut self, f: &mut Frame, t: Rect) {
         self.to_rows(f, t);
 

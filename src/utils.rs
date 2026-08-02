@@ -2,7 +2,6 @@
 use anyhow::*;
 use colorsys::{Hsl, Rgb};
 use newick::*;
-use once_cell::sync::OnceCell;
 use palette::*;
 use petname::Generator;
 use rand::prelude::*;
@@ -10,10 +9,6 @@ use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use svarog::*;
 use syntesuite::genebook::{FamilyID, Gene, GeneBook};
-
-static ANCESTRAL_QUERY: OnceCell<String> = OnceCell::new();
-const LEFTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start<? order by start desc limit ?";
-const RIGHTS_QUERY: &str = "select ancestral, direction from genomes where species=? and chr=? and start>? order by start asc limit ?";
 
 pub const WINDOW: usize = 15;
 pub const GENE_WIDTH: f32 = 15.;
@@ -93,11 +88,6 @@ pub fn gene2color(id: &[u8]) -> StyleColor {
     let g = (bytes[1] as f32 / 255.).clamp(0.1, 0.9);
     let b = (bytes[2] as f32 / 255.).clamp(0.1, 0.9);
     StyleColor::Percent(r, g, b)
-}
-
-pub fn set_reference(reference: &str) {
-    ANCESTRAL_QUERY.set(format!(
-        "select ancestral, species, chr, start, direction, left_tail_names, right_tail_names from genomes where {}=?", reference)).unwrap();
 }
 
 pub fn make_petnamemap(tree: &NewickTree, genes: &GeneCache) -> PetnameMap {
