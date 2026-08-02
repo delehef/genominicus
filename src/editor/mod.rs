@@ -43,8 +43,8 @@ impl Mode {
     fn help(&'_ self) -> Line<'_> {
         match self {
             Mode::Root => Line::from(vec![
-                "[f]".yellow().bold(),
-                "ilter".into(),
+                "[n]".yellow().bold(),
+                "arrow".into(),
                 " :: ".bold().white(),
                 "[h]".yellow().bold(),
                 "ighlight".into(),
@@ -150,7 +150,7 @@ impl Editor {
                     self.plot.settings.use_symbols = !self.plot.settings.use_symbols;
                 }
                 KeyCode::Char('h') => self.mode = Mode::Highlighter,
-                KeyCode::Char('f') => self.mode = Mode::Narrow,
+                KeyCode::Char('n') => self.mode = Mode::Narrow,
                 KeyCode::Up => self.plot.prev(1),
                 KeyCode::Down => self.plot.next(1),
                 KeyCode::PageUp => self.plot.prev(10),
@@ -206,7 +206,9 @@ impl Editor {
             }
             Mode::Narrow => {
                 match key.code {
-                    KeyCode::Char('c') => self.plot.narrowing = None,
+                    KeyCode::Char('c') => {
+                        self.plot.unset_narrowing();
+                    }
                     KeyCode::Char('e') => {
                         let mut t = Terminal::with_options(
                             CrosstermBackend::new(std::io::stdout()),

@@ -6,7 +6,12 @@ use ratatui::{
     widgets::{Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState},
     Frame,
 };
-use std::{collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    rc::Rc,
+    sync::OnceLock,
+};
 use syntesuite::genebook::Gene;
 
 use crate::{
@@ -67,6 +72,7 @@ const DEPTH_FACTOR: usize = 2;
 
 #[derive(PartialEq, Eq, Debug)]
 enum Position {
+    SingleChild,
     UpperBranch,
     MiddleBranch,
     LowerBranch,
@@ -85,7 +91,6 @@ struct DuplicationsCache {
 #[derive(Default)]
 struct Caches {
     narrowed_tree: Rc<NewickTree>,
-    genes: HashMap<NodeID, DispGene>,
     lineages: HashMap<NodeID, Vec<NodeContext>>,
     tree_chars: HashMap<NodeID, String>,
     duplications: DuplicationsCache,
@@ -136,18 +141,22 @@ impl DupNesting {
 }
 
 pub struct TreeView {
-    cache: Caches,
+    /// The unadultered tree.
     tree: NewickTree,
+    /// Information display for the genes contained in this tree.
+    // NOTE: is not narrowed when the tree is.
+    genes: HashMap<NodeID, DispGene>,
     pub settings: TreeViewSettings,
     landscape_data: Option<LandscapeData>,
     /// screen coordinate -> inner nodes IDs
     screen_to_nodes: HashMap<usize, Vec<usize>>,
     /// A list of selectors to highlight the matching genes
     pub highlighters: Vec<ForthExpr>,
-    /// A list of filters to focus on selected clades/genes
+    /// A narrowing expression to prune to tree to the nodes fulfilling the predicate.
     pub narrowing: Option<ForthExpr>,
     /// UI state
     states: States,
+    cache: Caches,
 }
 impl TreeView {
     pub fn from_newick(
@@ -166,6 +175,18 @@ impl TreeView {
         let leaves_count = tree.len();
         let mut r = Self {
             cache: Caches::default(),
+            genes: tree
+                .leaves()
+                .map(|n| {
+                    (
+                        n,
+                        DispGene {
+                            name: tree.name(n).cloned().unwrap_or("UNKNWN".into()),
+                            species: tree.attrs(n).get("S").cloned().unwrap_or("UNKNWN".into()),
+                        },
+                    )
+                })
+                .collect(),
             tree,
             landscape_data,
             settings,
@@ -179,22 +200,24 @@ impl TreeView {
     }
 
     fn update_caches(&mut self) {
-        let tree = self.tree.clone();
+        let mut tree = self.tree.clone();
+        if let Some(narrowing) = &self.narrowing {
+            let kept = tree
+                .leaves()
+                .filter(|n| {
+                    narrowing
+                        .eval(&self.genes[n])
+                        .unwrap()
+                        .right()
+                        .unwrap_or(false)
+                })
+                .flat_map(|n| tree.ascendance(n).into_iter())
+                .collect::<HashSet<_>>();
+            tree.filter_nodes(|n| kept.contains(&n));
+            tree.consolidate(|_| true);
+        }
 
-        let genes = tree
-            .leaves()
-            .map(|n| {
-                (
-                    n,
-                    DispGene {
-                        name: tree.name(n).cloned().unwrap_or("UNKNWN".into()),
-                        species: tree.attrs(n).get("S").cloned().unwrap_or("UNKNWN".into()),
-                    },
-                )
-            })
-            .collect();
-
-        let lineages = tree
+        let lineages: HashMap<NodeID, Vec<NodeContext>> = tree
             .leaves()
             .map(|n| {
                 (
@@ -205,7 +228,9 @@ impl TreeView {
                             id: n,
                             position: {
                                 if let Some(parent) = tree.parent(n) {
-                                    if tree
+                                    if tree.children(parent).unwrap().len() == 1 {
+                                        Position::SingleChild
+                                    } else if tree
                                         .children(parent)
                                         .unwrap()
                                         .first()
@@ -234,47 +259,18 @@ impl TreeView {
             })
             .collect();
 
-        self.cache = Caches {
-            narrowed_tree: Rc::new(tree),
-            genes,
-            lineages,
-            tree_chars: Default::default(),
-            duplications: Default::default(),
-        };
-
-        self.cache_tree_graph();
-        self.cache_dup_nesting();
-    }
-
-    pub(crate) fn set_narrowing(&mut self, narrowing: ForthExpr) {
-        self.narrowing = Some(narrowing);
-        self.update_caches();
-    }
-
-    fn tree(&self) -> Rc<NewickTree> {
-        self.cache.narrowed_tree.clone()
-    }
-
-    pub fn len(&self) -> usize {
-        self.tree().leaves().count()
-    }
-
-    fn cache_tree_graph(&mut self) {
-        self.cache.tree_chars = self
-            .tree
+        let tree_chars = tree
             .leaves()
-            .map(|n| (n, self.make_tree_line(n)))
+            .map(|n| (n, Self::make_tree_line(&tree, n, &lineages[&n])))
             .collect();
-    }
 
-    fn cache_dup_nesting(&mut self) {
-        self.cache.duplications.nestings.clear();
-        for n in self.tree().leaves() {
+        let mut duplications = DuplicationsCache::default();
+        for n in tree.leaves() {
             let mut pure_head_broken = false;
             let mut pure_tail_broken = false;
             let mut pure_head = ShiftRegister::new(3, false);
             let mut pure_tail = ShiftRegister::new(3, false);
-            let dup_nesting = self.cache.lineages[&n]
+            let dup_nesting = lineages[&n]
                 .iter()
                 .filter_map(|n| {
                     if n.position != Position::UpperBranch {
@@ -286,9 +282,8 @@ impl TreeView {
                     pure_tail.write(n.position == Position::LowerBranch && !pure_tail_broken);
                     pure_head.write(n.position == Position::UpperBranch && !pure_head_broken);
 
-                    if self.tree().is_duplication(n.id) {
-                        let dcs = self
-                            .tree()
+                    if tree.is_duplication(n.id) {
+                        let dcs = tree
                             .attrs(n.id)
                             .get("DCS")
                             .map(|x| x.parse::<f32>().unwrap())
@@ -307,25 +302,47 @@ impl TreeView {
                 })
                 .collect::<Vec<_>>();
 
-            self.cache.duplications.max_nesting =
-                self.cache.duplications.max_nesting.max(dup_nesting.len());
-            self.cache.duplications.nestings.insert(n, dup_nesting);
+            duplications.max_nesting = duplications.max_nesting.max(dup_nesting.len());
+            duplications.nestings.insert(n, dup_nesting);
         }
+
+        self.cache = Caches {
+            narrowed_tree: Rc::new(tree),
+            lineages,
+            tree_chars,
+            duplications,
+        };
     }
 
-    fn make_tree_line(&self, n: NodeID) -> String {
-        let lineage = &self.cache.lineages[&n];
+    pub(crate) fn unset_narrowing(&mut self) {
+        self.narrowing = None;
+        self.update_caches();
+    }
 
-        let leaf_length = self.tree().topological_depth().1
-            - self.tree().node_topological_depth(n).unwrap() as usize;
+    pub(crate) fn set_narrowing(&mut self, narrowing: ForthExpr) {
+        self.narrowing = Some(narrowing);
+        self.update_caches();
+    }
+
+    fn tree(&self) -> Rc<NewickTree> {
+        self.cache.narrowed_tree.clone()
+    }
+
+    pub fn len(&self) -> usize {
+        self.tree().leaves().count()
+    }
+
+    /// Given a node in the tree (supposedly a leaf), draws the ASCII representation of its line in the whole tree.
+    fn make_tree_line(tree: &NewickTree, n: NodeID, lineage: &[NodeContext]) -> String {
+        let leaf_length =
+            tree.topological_depth().1 - tree.node_topological_depth(n).unwrap() as usize;
         let mut r = "─".repeat(leaf_length * DEPTH_FACTOR);
 
         let mut on_my_line = true;
         for n in lineage {
-            let is_duplication = self
-                .tree()
+            let is_duplication = tree
                 .parent(n.id)
-                .map(|x| self.tree().is_duplication(x))
+                .map(|x| tree.is_duplication(x))
                 .unwrap_or(false);
 
             if on_my_line {
@@ -345,6 +362,9 @@ impl TreeView {
                         on_my_line = false;
                         r.push_str(if is_duplication { "─╙" } else { "─└" })
                     }
+                    Position::SingleChild => {
+                        r.push_str("┄┄");
+                    }
                 }
             } else {
                 match n.position {
@@ -362,6 +382,7 @@ impl TreeView {
                             r.push_str("  ");
                         }
                     }
+                    Position::SingleChild => r.push_str("  "),
                 }
             }
         }
@@ -521,7 +542,7 @@ impl TreeView {
             let row = Self::gene_to_row(
                 &self.cache.tree_chars[&n],
                 self.landscape_data.as_ref(),
-                self.cache.genes.get(&n).unwrap().clone(),
+                self.genes[&n].clone(),
                 &self.cache.duplications.nestings[&n],
                 false,
                 self.settings.use_symbols,
