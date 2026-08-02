@@ -221,7 +221,7 @@ impl Editor {
                                 .run(&mut t, self.minibuffer)
                         {
                             self.states.current_narrow = source;
-                            self.plot.narrowing = Some(expr);
+                            self.plot.set_narrowing(expr);
                         }
                     }
                     _ => {}

@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState},
     Frame,
 };
-use std::{cell::OnceCell, collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
+use std::{collections::HashMap, ops::Range, rc::Rc, sync::OnceLock};
 use syntesuite::genebook::Gene;
 
 use crate::{
@@ -26,6 +26,7 @@ const BLOCKS: &[Range<u32>] = &[
     // // Shapes -- tend to be too wide in most fonts
     // 0x25a0..0x25ff,
 ];
+/// An “alphabet” of symbols to represent syntenic families.
 static GENABET: OnceLock<Vec<char>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
@@ -80,6 +81,7 @@ struct DuplicationsCache {
     max_nesting: usize,
 }
 
+#[derive(Default)]
 struct Caches {
     genes: HashMap<NodeID, DispGene>,
     lineages: HashMap<NodeID, Vec<NodeContext>>,
@@ -134,7 +136,7 @@ impl DupNesting {
 pub struct TreeView {
     cache: Caches,
     tree: NewickTree,
-    narrowed_tree: OnceCell<Rc<NewickTree>>,
+    narrowed_tree: Rc<NewickTree>,
     pub settings: TreeViewSettings,
     landscape_data: Option<LandscapeData>,
     /// screen coordinate -> inner nodes IDs
@@ -160,31 +162,57 @@ impl TreeView {
                 .collect()
         });
 
-        let genes = tree
+        let leaves_count = tree.len();
+        let narrowed_tree = Rc::new(tree.clone());
+        let mut r = Self {
+            cache: Caches::default(),
+            tree,
+            narrowed_tree,
+            landscape_data,
+            settings,
+            screen_to_nodes: Default::default(),
+            highlighters: Default::default(),
+            narrowing: Default::default(),
+            states: States::new(leaves_count),
+        };
+        r.update_caches();
+        r
+    }
+
+    fn update_caches(&mut self) {
+        let genes = self
+            .tree()
             .leaves()
             .map(|n| {
                 (
                     n,
                     DispGene {
-                        name: tree.name(n).cloned().unwrap_or("UNKNWN".into()),
-                        species: tree.attrs(n).get("S").cloned().unwrap_or("UNKNWN".into()),
+                        name: self.tree().name(n).cloned().unwrap_or("UNKNWN".into()),
+                        species: self
+                            .tree()
+                            .attrs(n)
+                            .get("S")
+                            .cloned()
+                            .unwrap_or("UNKNWN".into()),
                     },
                 )
             })
             .collect();
 
-        let lineages = tree
+        let lineages = self
+            .tree()
             .leaves()
             .map(|n| {
                 (
                     n,
-                    tree.ascendance(n)
+                    self.tree()
+                        .ascendance(n)
                         .into_iter()
                         .map(|n| NodeContext {
                             id: n,
                             position: {
-                                if let Some(parent) = tree.parent(n) {
-                                    if tree.children(parent).unwrap()[0] == n {
+                                if let Some(parent) = self.tree().parent(n) {
+                                    if self.tree().children(parent).unwrap()[0] == n {
                                         Position::First
                                     } else {
                                         Position::Last
@@ -199,30 +227,26 @@ impl TreeView {
             })
             .collect();
 
-        let leaves_count = tree.len();
-        let mut r = Self {
-            cache: Caches {
-                genes,
-                lineages,
-                tree_chars: Default::default(),
-                duplications: Default::default(),
-            },
-            tree,
-            narrowed_tree: Default::default(),
-            landscape_data,
-            settings,
-            screen_to_nodes: Default::default(),
-            highlighters: Default::default(),
-            narrowing: Default::default(),
-            states: States::new(leaves_count),
+        self.cache = Caches {
+            genes,
+            lineages,
+            tree_chars: Default::default(),
+            duplications: Default::default(),
         };
-        r.cache_tree_graph();
-        r.cache_dup_nesting();
-        r
+
+        self.cache_tree_graph();
+        self.cache_dup_nesting();
+    }
+
+    pub(crate) fn set_narrowing(&mut self, narrowing: ForthExpr) {
+        self.narrowing = Some(narrowing);
+        let narrowed_tree = self.tree.clone();
+        self.narrowed_tree = Rc::new(narrowed_tree);
+        self.update_caches();
     }
 
     fn tree(&self) -> Rc<NewickTree> {
-        todo!()
+        self.narrowed_tree.clone()
     }
 
     pub fn len(&self) -> usize {
