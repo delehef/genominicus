@@ -24,8 +24,8 @@ itertools = "0.13.0"
 log = "0.4.17"
 maplit = "1"
 md5 = "0.7"
-# newick = "0.11"
-newick = { path = "../newick" }
+newick = "0.12"
+# newick = { path = "../newick" }
 open = "5"
 palette = "0.6"
 petgraph = "0.6"

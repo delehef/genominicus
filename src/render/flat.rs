@@ -14,7 +14,7 @@ fn draw_background(
     svg: &mut SvgDrawing,
     depth: f32,
     tree: &NewickTree,
-    node: usize,
+    node: NodeHandle,
     xoffset: f32,
     yoffset: f32,
     width: f32,
@@ -29,7 +29,7 @@ fn draw_background(
     }
 
     for &child in children.iter() {
-        let new_y = if tree[child].is_leaf() {
+        let new_y = if tree.is_leaf(child) {
             y + 20.
         } else {
             draw_background(svg, depth, tree, child, xoffset + BRANCH_WIDTH, y, width)
@@ -111,7 +111,7 @@ fn draw_tree(
     petmap: &PetnameMap,
     depth: f32,
     tree: &NewickTree,
-    n: usize,
+    n: NodeHandle,
     xoffset: f32,
     yoffset: f32,
     xlabels: f32,
@@ -120,7 +120,7 @@ fn draw_tree(
 ) -> f32 {
     let mut y = yoffset;
     let mut old_y = 0.;
-    let mut children = tree[n].children().to_vec();
+    let mut children = tree.children(n).unwrap().to_vec();
     children.sort_by_key(|c| tree.name(*c).cloned().unwrap_or_else(|| "Z".to_string()));
     if children.is_empty() {
         return y + 20.;
@@ -134,7 +134,7 @@ fn draw_tree(
         }
         old_y = y;
 
-        if tree[*child].is_leaf() {
+        if tree.is_leaf(*child) {
             // Leaf branch
             svg.line()
                 .from_coords(xoffset, y, depth, y)
@@ -423,7 +423,7 @@ pub fn render(
     out_filename: &str,
     render: &RenderSettings,
 ) {
-    let depth = BRANCH_WIDTH * (t.topological_depth().1 as f32 + 1.);
+    let depth = BRANCH_WIDTH * (t.topological_depth().unwrap().1 as f32 + 1.);
     let longest_name = (t.leaf_names().map(|name| name.len()).max().unwrap() as f32
         + t.leaves()
             .map(|l| t.attrs(l).get("S").map(|s| s.len()).unwrap_or(0))

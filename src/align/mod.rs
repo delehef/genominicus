@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(non_snake_case)] // I like my matrices to be in capitals
 use maplit::hashmap;
+use newick::NodeHandle;
 use std::cmp::max;
 use std::collections::HashMap;
 
@@ -14,7 +15,7 @@ mod poa;
 const SIMDW: usize = 8;
 const NEG_INF: i32 = -3_000_000;
 
-pub type SeqID = usize;
+pub type SeqID = NodeHandle;
 pub type Nucleotide = PoaElt;
 pub type Sequence = Vec<Nucleotide>;
 pub type Sequences = HashMap<SeqID, Sequence>;
@@ -73,8 +74,8 @@ fn add_alignment(
     let start_seq_idx = valid_seq_idxs[0];
     let end_seq_idx = valid_seq_idxs.last().unwrap();
 
-    let (mut first_id, mut head_id) = if *start_seq_idx > 0 {
-        insert_hanging_seq(g, &seq[0..*start_seq_idx], seq_id)
+    let (mut first_id, mut head_id) = if **start_seq_idx > 0 {
+        insert_hanging_seq(g, &seq[0..**start_seq_idx], seq_id)
             .map_or((None, None), |(first_id, head_id)| {
                 (Some(first_id), Some(head_id))
             })
@@ -82,8 +83,8 @@ fn add_alignment(
         (None, None)
     };
 
-    let tail_id = if **end_seq_idx < seq.len() {
-        insert_hanging_seq(g, &seq[*end_seq_idx + 1..], seq_id).map(|(tail_id, _)| tail_id)
+    let tail_id = if ***end_seq_idx < seq.len() {
+        insert_hanging_seq(g, &seq[***end_seq_idx + 1..], seq_id).map(|(tail_id, _)| tail_id)
     } else {
         None
     };
@@ -94,7 +95,7 @@ fn add_alignment(
             continue;
         }
 
-        let n = &seq[seq_idx.unwrap()];
+        let n = &seq[*seq_idx.unwrap()];
 
         let new_node = if graph_id.is_none() {
             // Not aligned, create a new node
@@ -433,7 +434,11 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
         } else {
             Some(ranks_to_nodes[i - 1])
         });
-        seq_idxs.push(if j == prev_j { None } else { Some(j - 1) });
+        seq_idxs.push(if j == prev_j {
+            None
+        } else {
+            Some((j - 1).into())
+        });
         i = prev_i;
         j = prev_j;
 
@@ -441,7 +446,7 @@ fn affine_sw(g: &POAGraph, seq: &Sequence, settings: &AffineNWSettings) -> (i32,
         if extend_left {
             loop {
                 graph_idxs.push(None);
-                seq_idxs.push(Some(j - 1));
+                seq_idxs.push(Some((j - 1).into()));
                 j -= 1;
                 if E[i * m_width + j] + e != E[i * m_width + j + 1] {
                     break;
@@ -549,7 +554,7 @@ pub fn poa_to_strings(g: &POAGraph, starts: &Heads) -> HashMap<usize, Vec<PoaElt
             (seq_id, seq_out)
         })
         .fold(HashMap::new(), |mut ax, (&seq_id, seq_out)| {
-            ax.insert(seq_id, seq_out);
+            ax.insert(*seq_id, seq_out);
             ax
         })
 }

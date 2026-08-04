@@ -139,7 +139,7 @@ pub fn make_colormap_per_duplication(
 ) -> ColorMap {
     fn create_gradient(
         t: &NewickTree,
-        leave_nodes: &[usize],
+        leave_nodes: &[NodeHandle],
         genes: &GeneCache,
         colormap: &mut ColorMap,
     ) {
@@ -212,31 +212,31 @@ pub fn make_colormap_per_duplication(
 
     fn rec_fill_colormap(
         tree: &NewickTree,
-        node: usize,
+        node: NodeHandle,
         genes: &GeneCache,
         colormap: &mut ColorMap,
     ) {
-        if node == 0 || tree.is_duplication(node) {
-            let children = tree[node].children();
+        if node == 0.into() || tree.is_duplication(node) {
+            let children = tree.children(node).unwrap();
             let members = children
                 .iter()
-                .filter(|c| tree[**c].is_leaf())
+                .filter(|c| tree.is_leaf(**c))
                 .cloned()
                 .collect::<Vec<_>>();
             create_gradient(tree, &members, genes, colormap);
 
-            for c in children.iter().filter(|&c| !tree[*c].is_leaf()) {
+            for c in children.iter().filter(|&c| !tree.is_leaf(*c)) {
                 create_gradient(tree, &tree.leaves_of(*c), genes, colormap)
             }
         }
 
-        for c in tree[node].children().iter() {
+        for c in tree.children(node).unwrap().iter() {
             rec_fill_colormap(tree, *c, genes, colormap)
         }
     }
 
     let mut colormap = ColorMap::new();
-    rec_fill_colormap(tree, 0, genes, &mut colormap);
+    rec_fill_colormap(tree, 0.into(), genes, &mut colormap);
     if colorize_all {
         for l in tree.leaves() {
             if let Some(g) = tree.name(l).and_then(|name| genes.get(name.as_str())) {
@@ -256,8 +256,8 @@ pub fn make_genes_cache(
     db_file: &str,
     id_column: &str,
 ) -> Result<HashMap<String, Gene>> {
-    fn reorder_tails(tree: &NewickTree, node: usize, genes: &mut GeneBook) {
-        fn reorder_leaves(t: &NewickTree, leave_nodes: &[usize], genes: &mut GeneBook) {
+    fn reorder_tails(tree: &NewickTree, node: NodeHandle, genes: &mut GeneBook) {
+        fn reorder_leaves(t: &NewickTree, leave_nodes: &[NodeHandle], genes: &mut GeneBook) {
             if leave_nodes.len() < 2 {
                 return;
             }
@@ -337,20 +337,20 @@ pub fn make_genes_cache(
         }
 
         if tree.is_root(node) || tree.is_duplication(node) {
-            let children = tree[node].children();
+            let children = tree.children(node).unwrap();
             let members = children
                 .iter()
-                .filter(|c| tree[**c].is_leaf())
+                .filter(|c| tree.is_leaf(**c))
                 .cloned()
                 .collect::<Vec<_>>();
             reorder_leaves(tree, &members, genes);
 
-            for c in children.iter().filter(|c| !tree[**c].is_leaf()) {
+            for c in children.iter().filter(|c| !tree.is_leaf(**c)) {
                 reorder_leaves(tree, &tree.leaves_of(*c), genes);
             }
         }
 
-        for c in tree[node].children().iter() {
+        for c in tree.children(node).unwrap().iter() {
             reorder_tails(tree, *c, genes);
         }
     }

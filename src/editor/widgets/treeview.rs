@@ -1,4 +1,4 @@
-use newick::{Newick, NewickTree, NodeID};
+use newick::{Newick, NewickTree, NodeHandle};
 use ratatui::{
     layout::{Constraint, Margin, Rect},
     style::{Color, Style, Stylize},
@@ -78,21 +78,20 @@ enum Position {
     LowerBranch,
 }
 struct NodeContext {
-    id: NodeID,
+    id: NodeHandle,
     position: Position,
 }
 
 #[derive(Default)]
 struct DuplicationsCache {
-    nestings: HashMap<NodeID, Vec<DupNesting>>,
+    nestings: HashMap<NodeHandle, Vec<DupNesting>>,
     max_nesting: usize,
 }
 
-#[derive(Default)]
 struct Caches {
     narrowed_tree: Rc<NewickTree>,
-    lineages: HashMap<NodeID, Vec<NodeContext>>,
-    tree_chars: HashMap<NodeID, String>,
+    lineages: HashMap<NodeHandle, Vec<NodeContext>>,
+    tree_chars: HashMap<NodeHandle, String>,
     duplications: DuplicationsCache,
 }
 
@@ -145,11 +144,11 @@ pub struct TreeView {
     tree: NewickTree,
     /// Information display for the genes contained in this tree.
     // NOTE: is not narrowed when the tree is.
-    genes: HashMap<NodeID, DispGene>,
+    genes: HashMap<NodeHandle, DispGene>,
     pub settings: TreeViewSettings,
     landscape_data: Option<LandscapeData>,
     /// screen coordinate -> inner nodes IDs
-    screen_to_nodes: HashMap<usize, Vec<usize>>,
+    screen_to_nodes: HashMap<usize, Vec<NodeHandle>>,
     /// A list of selectors to highlight the matching genes
     pub highlighters: Vec<ForthExpr>,
     /// A narrowing expression to prune to tree to the nodes fulfilling the predicate.
@@ -174,7 +173,12 @@ impl TreeView {
 
         let leaves_count = tree.len();
         let mut r = Self {
-            cache: Caches::default(),
+            cache: Caches {
+                narrowed_tree: Rc::new(tree.clone()),
+                lineages: Default::default(),
+                tree_chars: Default::default(),
+                duplications: Default::default(),
+            },
             genes: tree
                 .leaves()
                 .map(|n| {
@@ -214,10 +218,10 @@ impl TreeView {
                 .flat_map(|n| tree.ascendance(n).into_iter())
                 .collect::<HashSet<_>>();
             tree.filter_nodes(|n| kept.contains(&n));
-            tree.consolidate(|_| true);
+            tree.consolidate(|_| false);
         }
 
-        let lineages: HashMap<NodeID, Vec<NodeContext>> = tree
+        let lineages: HashMap<NodeHandle, Vec<NodeContext>> = tree
             .leaves()
             .map(|n| {
                 (
@@ -333,9 +337,9 @@ impl TreeView {
     }
 
     /// Given a node in the tree (supposedly a leaf), draws the ASCII representation of its line in the whole tree.
-    fn make_tree_line(tree: &NewickTree, n: NodeID, lineage: &[NodeContext]) -> String {
+    fn make_tree_line(tree: &NewickTree, n: NodeHandle, lineage: &[NodeContext]) -> String {
         let leaf_length =
-            tree.topological_depth().1 - tree.node_topological_depth(n).unwrap() as usize;
+            tree.topological_depth().unwrap().1 - tree.topological_depth_of(n).unwrap() as usize;
         let mut r = "─".repeat(leaf_length * DEPTH_FACTOR);
 
         let mut on_my_line = true;
@@ -542,7 +546,7 @@ impl TreeView {
             let row = Self::gene_to_row(
                 &self.cache.tree_chars[&n],
                 self.landscape_data.as_ref(),
-                self.genes[&n].clone(),
+                self.genes.get(&n).unwrap().clone(),
                 &self.cache.duplications.nestings[&n],
                 false,
                 self.settings.use_symbols,
@@ -551,7 +555,11 @@ impl TreeView {
             rows.push(row);
         }
 
-        let tree_depth = self.tree().topological_depth().1;
+        let tree_depth = self
+            .tree()
+            .topological_depth()
+            .map(|(_, depth)| depth)
+            .unwrap_or(0);
         let widths = [
             Constraint::Length(1),
             Constraint::Length((DEPTH_FACTOR * (tree_depth + 1)) as u16),
