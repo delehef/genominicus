@@ -55,13 +55,13 @@ fn draw_species_tree(
         xlabels: f32,
         y: f32,
         t: &NewickTree,
-        n: usize,
+        n: NodeHandle,
         species_to_render: &[&String],
         present_species: &[&String],
         species_map: &mut HashMap<String, (f32, f32)>,
     ) -> f32 {
         let mut y = y;
-        if t[n].is_leaf() {
+        if t.is_leaf(n) {
             t.name(n).map(|name| {
                 svg.line()
                     .from_coords(x, y + K, xlabels, y + K)
@@ -131,7 +131,7 @@ fn draw_species_tree(
     render_node(
         &mut out,
         0.,
-        species_tree.topological_depth().1 as f32 * K,
+        species_tree.topological_depth().unwrap().1 as f32 * K,
         0.,
         species_tree,
         species_tree.root(),
@@ -148,7 +148,7 @@ pub fn draw_duplications_blocks(
     species_map: &mut HashMap<String, (f32, f32)>,
     render: &RenderSettings,
 ) -> (Group, HashMap<String, Vec<f32>>) {
-    fn species_name(t: &NewickTree, n: usize) -> String {
+    fn species_name(t: &NewickTree, n: NodeHandle) -> String {
         t.attrs(n)
             .get("S")
             .expect("no species (`S`) annotation found in tree")
@@ -157,13 +157,19 @@ pub fn draw_duplications_blocks(
 
     let mut out = Group::new();
     let mut xoffset = 0.;
-    // ([Arm{}], DCS, MRCA ID, DupID)
-    let mut duplication_sets: Vec<(Vec<(HashSet<String>, i32, i32)>, f32, usize, usize)> = t
+    // ([Arm{}], DCS, MRCA node ID, Dup node ID)
+    let mut duplication_sets: Vec<(
+        Vec<(HashSet<String>, i32, i32)>,
+        f32,
+        NodeHandle,
+        NodeHandle,
+    )> = t
         .inners()
         .filter(|&n| t.is_duplication(n))
         .map(|n| {
-            let arms = t[n]
-                .children()
+            let arms = t
+                .children(n)
+                .unwrap()
                 .iter()
                 .map(|&c| {
                     (

@@ -40,7 +40,12 @@ struct HtmlNode {
 }
 
 fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
-    fn process(tree: &NewickTree, node: usize, genes: &GeneCache, colormap: &ColorMap) -> HtmlNode {
+    fn process(
+        tree: &NewickTree,
+        node: NodeHandle,
+        genes: &GeneCache,
+        colormap: &ColorMap,
+    ) -> HtmlNode {
         let descendants = tree.descendants(node);
         let mut common_ancestral = 0;
         let clustered = {
@@ -222,8 +227,9 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
             gene,
             ancestral: ancestral.to_string(), // FIXME: random name
             color,
-            children: tree[node]
-                .children()
+            children: tree
+                .children(node)
+                .unwrap()
                 .as_ref()
                 .iter()
                 .map(|n| process(tree, *n, genes, colormap))

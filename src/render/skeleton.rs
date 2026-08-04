@@ -10,7 +10,7 @@ const STEP_FORWARD: f32 = 20.;
 fn draw_tree(
     svg: &mut SvgDrawing,
     t: &NewickTree,
-    n: usize,
+    n: NodeHandle,
     xoffset: f32,
     yoffset: f32,
     render: &RenderSettings,
@@ -21,7 +21,7 @@ fn draw_tree(
     let step_forward = STEP_FORWARD + if t.is_duplication(n) { size } else { 0. };
 
     if t.descendants(n).iter().any(|&d| t.is_duplication(d)) || t.is_duplication(n) {
-        for &c in t[n].children() {
+        for &c in t.children(n).unwrap() {
             let thickness = (t.leaves_of(c).len() as f32).sqrt();
             let leaves_count = t.leaves_of(c).len() as f32;
 
