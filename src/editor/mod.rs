@@ -253,6 +253,14 @@ impl Editor {
     }
 }
 
+struct TerminalGuard;
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    }
+}
+
 pub fn run(
     name: String,
     t: NewickTree,
@@ -264,13 +272,10 @@ pub fn run(
     execute!(stdout, EnterAlternateScreen).context("failed to initialize terminal")?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
+    let _guard = TerminalGuard;
 
     let mut editor = Editor::new(name, t, synteny, settings);
     editor.run(&mut terminal)?;
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
     terminal.show_cursor()?;
-
     Ok(())
 }
