@@ -52,10 +52,12 @@ impl Eq for PoaElt {}
 
 #[derive(Debug, Default)]
 pub struct RenderSettings {
+    /// Display clade names additionally to leaves.
     pub inner_tags: bool,
+    /// Clade annotations to display, if any.
     pub node_annotations: Vec<String>,
+    /// If set, graphically links syntenic genes between species.
     pub links: bool,
-    pub duplication_ids: bool,
 }
 
 pub type GeneCache = HashMap<String, Gene>;

@@ -190,7 +190,7 @@ fn main() -> Result<()> {
             );
             let out_filename = out_filename.to_str().unwrap();
             let t =
-                newick::one_from_filename(&file).context(format!("failed to read `{}`", &file))?;
+                newick::one_from_filename(&file).context(format!("failed to read `{}`", file))?;
             let out = match graph_type.as_str() {
                 "flat" => {
                     let genes = make_genes_cache(&t, &database, &id_column)?;
@@ -248,7 +248,7 @@ fn main() -> Result<()> {
             use_symbols,
         } => {
             let tree = newick::one_from_filename(&file)
-                .with_context(|| format!("failed to read `{}`", &file))?;
+                .with_context(|| format!("failed to read `{}`", file))?;
 
             let synteny = if let Some(database) = database {
                 println!("Computing synteny information...");

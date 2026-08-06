@@ -49,22 +49,26 @@ fn draw_species_tree(
     species_to_render: &[&String],
     present_species: &[&String],
 ) -> (Group, HashMap<String, (f32, f32)>) {
+    struct DrawState {
+        node: NodeHandle,
+        x: f32,
+        y: f32,
+    }
+
     fn render_node(
         svg: &mut Group,
-        x: f32,
+        current: DrawState,
         xlabels: f32,
-        y: f32,
         t: &NewickTree,
-        n: NodeHandle,
         species_to_render: &[&String],
         present_species: &[&String],
         species_map: &mut HashMap<String, (f32, f32)>,
     ) -> f32 {
-        let mut y = y;
-        if t.is_leaf(n) {
-            t.name(n).map(|name| {
+        let mut y = current.y;
+        if t.is_leaf(current.node) {
+            t.name(current.node).map(|name| {
                 svg.line()
-                    .from_coords(x, y + K, xlabels, y + K)
+                    .from_coords(current.x, y + K, xlabels, y + K)
                     .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                     .shift(0., -K / 2.);
                 svg.text()
@@ -85,10 +89,10 @@ fn draw_species_tree(
         } else {
             let base_y = y;
 
-            if let Some(name) = &t.name(n) {
-                species_map.insert(name.to_string(), (x, y));
+            if let Some(name) = &t.name(current.node) {
+                species_map.insert(name.to_string(), (current.x, y));
             }
-            for (i, c) in t.children(n).unwrap().iter().enumerate() {
+            for (i, c) in t.children(current.node).unwrap().iter().enumerate() {
                 if t.leaves_of(*c).iter().any(|l| {
                     t.name(*l)
                         .map(|name| species_to_render.contains(&name))
@@ -96,26 +100,28 @@ fn draw_species_tree(
                 }) {
                     if i == 0 {
                         svg.line()
-                            .from_coords(x, y + K, x + K, y + K)
+                            .from_coords(current.x, y + K, current.x + K, y + K)
                             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                             .shift(0., -K / 2.);
                     } else {
                         svg.line()
-                            .from_coords(x, base_y + K, x, y + K)
+                            .from_coords(current.x, base_y + K, current.x, y + K)
                             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                             .shift(0., -K / 2.);
                         svg.line()
-                            .from_coords(x, y + K, x + K, y + K)
+                            .from_coords(current.x, y + K, current.x + K, y + K)
                             .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5))
                             .shift(0., -K / 2.);
                     }
                     y = render_node(
                         svg,
-                        x + K,
+                        DrawState {
+                            node: *c,
+                            x: current.x + K,
+                            y,
+                        },
                         xlabels,
-                        y,
                         t,
-                        *c,
                         species_to_render,
                         present_species,
                         species_map,
@@ -130,11 +136,13 @@ fn draw_species_tree(
     let mut out = Group::new();
     render_node(
         &mut out,
-        0.,
+        DrawState {
+            node: species_tree.root(),
+            x: 0.,
+            y: 0.,
+        },
         species_tree.topological_depth().unwrap().1 as f32 * K,
-        0.,
         species_tree,
-        species_tree.root(),
         species_to_render,
         present_species,
         &mut species_map,

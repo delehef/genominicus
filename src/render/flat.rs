@@ -10,18 +10,22 @@ use syntesuite::Strand;
 
 const MARGIN_TOP: f32 = 100.0;
 
+struct DrawState {
+    node: NodeHandle,
+    xoffset: f32,
+    yoffset: f32,
+}
+
 fn draw_background(
     svg: &mut SvgDrawing,
     depth: f32,
     tree: &NewickTree,
-    node: NodeHandle,
-    xoffset: f32,
-    yoffset: f32,
+    current: DrawState,
     width: f32,
 ) -> f32 {
-    let mut y = yoffset;
+    let mut y = current.yoffset;
 
-    let mut children = tree.children(node).unwrap().to_vec();
+    let mut children = tree.children(current.node).unwrap().to_vec();
     children.sort_by_key(|c| tree.name(*c).cloned().unwrap_or_else(|| "Z".to_string()));
 
     if children.is_empty() {
@@ -32,16 +36,26 @@ fn draw_background(
         let new_y = if tree.is_leaf(child) {
             y + 20.
         } else {
-            draw_background(svg, depth, tree, child, xoffset + BRANCH_WIDTH, y, width)
+            draw_background(
+                svg,
+                depth,
+                tree,
+                DrawState {
+                    node: child,
+                    xoffset: current.xoffset + BRANCH_WIDTH,
+                    yoffset: y,
+                },
+                width,
+            )
         };
 
-        if tree.is_duplication(node) {
-            let d = xoffset / depth;
+        if tree.is_duplication(current.node) {
+            let d = current.xoffset / depth;
             svg.polygon()
                 .from_pos_dims(
-                    xoffset + BRANCH_WIDTH / 2.,
+                    current.xoffset + BRANCH_WIDTH / 2.,
                     y - 6.,
-                    width - xoffset - d * BRANCH_WIDTH,
+                    width - current.xoffset - d * BRANCH_WIDTH,
                     new_y - y - 6.,
                 )
                 .style(|s| {
@@ -54,50 +68,50 @@ fn draw_background(
     y
 }
 
-fn draw_gene<'a>(
-    svg: &'a mut SvgDrawing,
+struct GeneGlyph<'a> {
     x: f32,
     y: f32,
     strand: Strand,
-    color: &StyleColor,
-    name: &str,
-) -> &'a mut Polygon {
-    match strand {
+    color: &'a StyleColor,
+    name: &'a str,
+}
+fn draw_gene<'a>(svg: &'a mut SvgDrawing, g: GeneGlyph<'_>) -> &'a mut Polygon {
+    match g.strand {
         Strand::Direct => svg
             .polygon()
-            .add_point(x, y)
-            .add_point(x + 3., y - 5.)
-            .add_point(x + GENE_WIDTH, y - 5.)
-            .add_point(x + GENE_WIDTH, y + 5.)
-            .add_point(x + 3., y + 5.)
-            .set_hover(name)
+            .add_point(g.x, g.y)
+            .add_point(g.x + 3., g.y - 5.)
+            .add_point(g.x + GENE_WIDTH, g.y - 5.)
+            .add_point(g.x + GENE_WIDTH, g.y + 5.)
+            .add_point(g.x + 3., g.y + 5.)
+            .set_hover(g.name)
             .style(|s| {
-                s.fill_color(Some(color.clone()))
+                s.fill_color(Some(g.color.clone()))
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             }),
         Strand::Reverse => svg
             .polygon()
-            .add_point(x, y - 5.)
-            .add_point(x + GENE_WIDTH - 3., y - 5.)
-            .add_point(x + GENE_WIDTH, y)
-            .add_point(x + GENE_WIDTH - 3., y + 5.)
-            .add_point(x, y + 5.)
-            .set_hover(name)
+            .add_point(g.x, g.y - 5.)
+            .add_point(g.x + GENE_WIDTH - 3., g.y - 5.)
+            .add_point(g.x + GENE_WIDTH, g.y)
+            .add_point(g.x + GENE_WIDTH - 3., g.y + 5.)
+            .add_point(g.x, g.y + 5.)
+            .set_hover(g.name)
             .style(|s| {
-                s.fill_color(Some(color.clone()))
+                s.fill_color(Some(g.color.clone()))
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             }),
         Strand::Unknown => svg
             .polygon()
-            .add_point(x + 1.5, y - 5.)
-            .add_point(x + GENE_WIDTH - 1.5, y - 5.)
-            .add_point(x + GENE_WIDTH - 1.5, y + 5.)
-            .add_point(x + 1.5, y + 5.)
-            .set_hover(name)
+            .add_point(g.x + 1.5, g.y - 5.)
+            .add_point(g.x + GENE_WIDTH - 1.5, g.y - 5.)
+            .add_point(g.x + GENE_WIDTH - 1.5, g.y + 5.)
+            .add_point(g.x + 1.5, g.y + 5.)
+            .set_hover(g.name)
             .style(|s| {
-                s.fill_color(Some(color.clone()))
+                s.fill_color(Some(g.color.clone()))
                     .stroke_width(0.5)
                     .stroke_color(StyleColor::Percent(0.2, 0.2, 0.2))
             }),
@@ -111,16 +125,14 @@ fn draw_tree(
     petmap: &PetnameMap,
     depth: f32,
     tree: &NewickTree,
-    n: NodeHandle,
-    xoffset: f32,
-    yoffset: f32,
+    current: DrawState,
     xlabels: f32,
     links: &mut Vec<(f32, Vec<FamilyID>, FamilyID, Vec<FamilyID>)>,
     render: &RenderSettings,
 ) -> f32 {
-    let mut y = yoffset;
+    let mut y = current.yoffset;
     let mut old_y = 0.;
-    let mut children = tree.children(n).unwrap().to_vec();
+    let mut children = tree.children(current.node).unwrap().to_vec();
     children.sort_by_key(|c| tree.name(*c).cloned().unwrap_or_else(|| "Z".to_string()));
     if children.is_empty() {
         return y + 20.;
@@ -129,7 +141,7 @@ fn draw_tree(
     for (i, child) in children.iter().enumerate() {
         if i > 0 {
             svg.line()
-                .from_coords(xoffset, old_y, xoffset, y)
+                .from_coords(current.xoffset, old_y, current.xoffset, y)
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
         }
         old_y = y;
@@ -137,7 +149,7 @@ fn draw_tree(
         if tree.is_leaf(*child) {
             // Leaf branch
             svg.line()
-                .from_coords(xoffset, y, depth, y)
+                .from_coords(current.xoffset, y, depth, y)
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
 
             // Landscape support line
@@ -176,13 +188,15 @@ fn draw_tree(
                         let xstart = xbase - (k as f32) * (GENE_WIDTH + GENE_SPACING);
                         let drawn = draw_gene(
                             svg,
-                            xstart,
-                            y,
-                            tg.strand,
-                            colormap
-                                .get(&tg.family)
-                                .unwrap_or(&StyleColor::String("#aaa".to_string())),
-                            &petmap[&tg.family],
+                            GeneGlyph {
+                                x: xstart,
+                                y,
+                                strand: tg.strand,
+                                color: colormap
+                                    .get(&tg.family)
+                                    .unwrap_or(&StyleColor::String("#aaa".to_string())),
+                                name: &petmap[&tg.family],
+                            },
                         );
                         if tg.family == *family {
                             drawn.style(|s| {
@@ -195,11 +209,13 @@ fn draw_tree(
                     // The Gene
                     draw_gene(
                         svg,
-                        xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
-                        y,
-                        *strand,
-                        &gene2color(&family.to_ne_bytes()),
-                        &petmap[family],
+                        GeneGlyph {
+                            x: xlabels + WINDOW as f32 * (GENE_WIDTH + GENE_SPACING),
+                            y,
+                            strand: *strand,
+                            color: &gene2color(&family.to_ne_bytes()),
+                            name: &petmap[family],
+                        },
                     )
                     .style(|s| {
                         s.stroke_width(2.)
@@ -212,13 +228,15 @@ fn draw_tree(
                         let xstart = xbase + (k as f32) * (GENE_WIDTH + GENE_SPACING);
                         let drawn = draw_gene(
                             svg,
-                            xstart,
-                            y,
-                            tg.strand,
-                            colormap
-                                .get(&tg.family)
-                                .unwrap_or(&StyleColor::String("#aaa".to_string())),
-                            &petmap[&tg.family],
+                            GeneGlyph {
+                                x: xstart,
+                                y,
+                                strand: tg.strand,
+                                color: colormap
+                                    .get(&tg.family)
+                                    .unwrap_or(&StyleColor::String("#aaa".to_string())),
+                                name: &petmap[&tg.family],
+                            },
                         );
                         if tg.family == *family {
                             drawn.style(|s| {
@@ -248,7 +266,7 @@ fn draw_tree(
             y += 20.;
         } else {
             svg.line()
-                .from_coords(xoffset, y, xoffset + BRANCH_WIDTH, y)
+                .from_coords(current.xoffset, y, current.xoffset + BRANCH_WIDTH, y)
                 .style(|s| s.stroke_color(StyleColor::RGB(0, 0, 0)).stroke_width(0.5));
             y = draw_tree(
                 svg,
@@ -257,9 +275,11 @@ fn draw_tree(
                 petmap,
                 depth,
                 tree,
-                *child,
-                xoffset + BRANCH_WIDTH,
-                y,
+                DrawState {
+                    node: *child,
+                    xoffset: current.xoffset + BRANCH_WIDTH,
+                    yoffset: y,
+                },
                 xlabels,
                 links,
                 render,
@@ -267,24 +287,28 @@ fn draw_tree(
         }
     }
 
-    let grafting_method = tree.attrs(n).get("METHOD").cloned().unwrap_or_default();
-    fn caret<'a>(
-        svg: &'a mut SvgDrawing,
+    let grafting_method = tree
+        .attrs(current.node)
+        .get("METHOD")
+        .cloned()
+        .unwrap_or_default();
+    struct CaretGlyph<'a> {
         xoffset: f32,
         yoffset: f32,
-        w: f32,
+        width: f32,
         dcs: Option<f32>,
         method: &'a str,
-    ) {
-        match method {
+    }
+    fn caret(svg: &mut SvgDrawing, g: CaretGlyph<'_>) {
+        match g.method {
             "ELC" => {
                 let _ = svg
                     .circle()
-                    .x(xoffset)
-                    .y(yoffset)
-                    .radius(w / 2.)
+                    .x(g.xoffset)
+                    .y(g.yoffset)
+                    .radius(g.width / 2.)
                     .style(|s| {
-                        s.fill_color(Some(if let Some(dcs) = dcs {
+                        s.fill_color(Some(if let Some(dcs) = g.dcs {
                             StyleColor::Percent(1.0 - dcs, dcs, 0.)
                         } else {
                             StyleColor::Percent(0., 0., 0.)
@@ -294,10 +318,15 @@ fn draw_tree(
             "SEQ" => {
                 let _ = svg
                     .polygon()
-                    .from_pos_dims(xoffset - w / 2., yoffset - w / 2., w, w)
-                    .transform(|c| c.rotate_from(45., xoffset, yoffset))
+                    .from_pos_dims(
+                        g.xoffset - g.width / 2.,
+                        g.yoffset - g.width / 2.,
+                        g.width,
+                        g.width,
+                    )
+                    .transform(|c| c.rotate_from(45., g.xoffset, g.yoffset))
                     .style(|s| {
-                        s.fill_color(Some(if let Some(dcs) = dcs {
+                        s.fill_color(Some(if let Some(dcs) = g.dcs {
                             StyleColor::Percent(1.0 - dcs, dcs, 0.)
                         } else {
                             StyleColor::Percent(0., 0., 0.)
@@ -307,9 +336,14 @@ fn draw_tree(
             "SYN" => {
                 let _ = svg
                     .polygon()
-                    .from_pos_dims(xoffset - w / 2., yoffset - w / 2., w, w)
+                    .from_pos_dims(
+                        g.xoffset - g.width / 2.,
+                        g.yoffset - g.width / 2.,
+                        g.width,
+                        g.width,
+                    )
                     .style(|s| {
-                        s.fill_color(Some(if let Some(dcs) = dcs {
+                        s.fill_color(Some(if let Some(dcs) = g.dcs {
                             StyleColor::Percent(1.0 - dcs, dcs, 0.)
                         } else {
                             StyleColor::Percent(0., 0., 0.)
@@ -317,10 +351,15 @@ fn draw_tree(
                     });
             }
             _ => {
-                if let Some(dcs) = dcs {
+                if let Some(dcs) = g.dcs {
                     let _ = svg
                         .polygon()
-                        .from_pos_dims(xoffset - w / 2., yoffset - w / 2., w, w)
+                        .from_pos_dims(
+                            g.xoffset - g.width / 2.,
+                            g.yoffset - g.width / 2.,
+                            g.width,
+                            g.width,
+                        )
                         .style(|s| {
                             s.stroke_color(StyleColor::Percent(1.0 - dcs, dcs, 0.))
                                 .fill_color(None)
@@ -332,11 +371,11 @@ fn draw_tree(
     }
 
     for (label_offset, annotation) in render.node_annotations.iter().enumerate() {
-        if let Some(annotation) = tree.attrs(n).get(annotation) {
+        if let Some(annotation) = tree.attrs(current.node).get(annotation) {
             svg.text()
                 .pos(
-                    xoffset - FONT_SIZE,
-                    yoffset + FONT_SIZE + 1.1 * label_offset as f32,
+                    current.xoffset - FONT_SIZE,
+                    current.yoffset + FONT_SIZE + 1.1 * label_offset as f32,
                 )
                 .text(annotation);
         }
@@ -344,22 +383,24 @@ fn draw_tree(
 
     caret(
         svg,
-        xoffset,
-        yoffset,
-        6.,
-        tree[n]
-            .data()
-            .attrs
-            .get("DCS")
-            .and_then(|dcs| str::parse::<f32>(dcs).ok()),
-        &grafting_method,
+        CaretGlyph {
+            xoffset: current.xoffset,
+            yoffset: current.yoffset,
+            width: 6.,
+            dcs: tree[current.node]
+                .data()
+                .attrs
+                .get("DCS")
+                .and_then(|dcs| str::parse::<f32>(dcs).ok()),
+            method: &grafting_method,
+        },
     );
 
     if render.inner_tags {
-        tree.attrs(n).get("S").map(|name| {
+        tree.attrs(current.node).get("S").map(|name| {
             svg.text()
-                .pos(xoffset, yoffset - FONT_SIZE)
-                .transform(|t| t.rotate_from(-30., xoffset, yoffset - FONT_SIZE))
+                .pos(current.xoffset, current.yoffset - FONT_SIZE)
+                .transform(|t| t.rotate_from(-30., current.xoffset, current.yoffset - FONT_SIZE))
                 .text(name)
         });
     }
@@ -434,7 +475,17 @@ pub fn render(
     let xlabels = 0.85 * (10. + depth + longest_name + 20.);
     let width = xlabels + (2. * WINDOW as f32 + 1.) * (GENE_WIDTH + GENE_SPACING) + 60.;
     let mut svg = SvgDrawing::new();
-    draw_background(&mut svg, depth, t, t.root(), 10.0, MARGIN_TOP, width);
+    draw_background(
+        &mut svg,
+        depth,
+        t,
+        DrawState {
+            node: t.root(),
+            xoffset: 10.0,
+            yoffset: MARGIN_TOP,
+        },
+        width,
+    );
     let mut links = Vec::new();
     draw_tree(
         &mut svg,
@@ -443,9 +494,11 @@ pub fn render(
         petmap,
         depth,
         t,
-        t.root(),
-        10.0,
-        MARGIN_TOP,
+        DrawState {
+            node: t.root(),
+            xoffset: 10.0,
+            yoffset: MARGIN_TOP,
+        },
         xlabels,
         &mut links,
         render,
