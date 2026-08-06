@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 use anyhow::*;
 use colorsys::{Hsl, Rgb};
+use enterpolation::linear::ConstEquidistantLinear;
+use enterpolation::Curve;
 use newick::*;
 use palette::*;
-use petname::Generator;
-use rand::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use svarog::*;
@@ -107,7 +107,7 @@ pub fn make_petnamemap(tree: &NewickTree, genes: &GeneCache) -> PetnameMap {
             {
                 petmap
                     .entry(f)
-                    .or_insert_with(|| petname::Petnames::default().generate_one(2, "-").unwrap());
+                    .or_insert_with(|| petname::petname(2, "-").unwrap());
             }
         }
     }
@@ -183,23 +183,21 @@ pub fn make_colormap_per_duplication(
             .map(|(i, _)| i)
             .unwrap_or(0)];
 
-        let mut rng = rand::thread_rng();
-        let start = Hsv::new(
-            360. * rng.gen::<f64>(),
-            0.5 + rng.gen::<f64>() / 2.,
-            0.5 + rng.gen::<f64>() / 2.,
-        );
-        let end = Hsv::new(
-            360. * rng.gen::<f64>(),
-            0.5 + rng.gen::<f64>() / 2.,
-            0.5 + rng.gen::<f64>() / 2.,
-        );
+        let start = LinSrgb::from_color(Hsv::new(
+            rand::random_range(0.0..=360.),
+            rand::random_range(0.5..=1.0),
+            rand::random_range(0.5..=1.0),
+        ));
+        let end = LinSrgb::from_color(Hsv::new(
+            rand::random_range(0.0..=360.),
+            rand::random_range(0.5..=1.0),
+            rand::random_range(0.5..=1.0),
+        ));
 
-        let gradient = Gradient::new(vec![start, end])
-            .take(ref_tail.len())
-            .collect::<Vec<_>>();
-        for (i, tail_gene) in ref_tail.iter().enumerate() {
-            let color = palette::rgb::Rgb::from_color(gradient[i]);
+        let gradient = ConstEquidistantLinear::<f64, _, 2>::equidistant_unchecked([start, end])
+            .take(ref_tail.len());
+
+        for (tail_gene, color) in ref_tail.iter().zip(gradient) {
             colormap
                 .entry(tail_gene.family)
                 .or_insert(StyleColor::Percent(

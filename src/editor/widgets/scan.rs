@@ -56,7 +56,7 @@ impl<'a> ScanInput<'a> {
         loop {
             let _ = self.validate();
             let _ = term.draw(|f| {
-                f.render_widget(self.input.widget(), target);
+                f.render_widget(&self.input, target);
             });
 
             match crossterm::event::read().unwrap().into() {

@@ -125,7 +125,7 @@ impl Editor {
                 Constraint::Min(1),
                 Constraint::Length(3),
             ])
-            .split(f.size());
+            .split(f.area());
 
         let title = Paragraph::new(self.mode.help()).block(
             Block::default()
@@ -180,24 +180,21 @@ impl Editor {
                     KeyCode::Char('p') => {
                         self.plot.highlighters.pop();
                     }
-                    KeyCode::Char('e') => {
-                        if self.plot.highlighters.pop().is_some() {
-                            let mut t = Terminal::with_options(
-                                CrosstermBackend::new(std::io::stdout()),
-                                TerminalOptions {
-                                    viewport: Viewport::Fixed(self.minibuffer),
-                                },
-                            )
-                            .unwrap();
+                    KeyCode::Char('e') if self.plot.highlighters.pop().is_some() => {
+                        let mut t = Terminal::with_options(
+                            CrosstermBackend::new(std::io::stdout()),
+                            TerminalOptions {
+                                viewport: Viewport::Fixed(self.minibuffer),
+                            },
+                        )
+                        .unwrap();
 
-                            if let Some((source, expr)) = widgets::scan::ScanInput::new(
-                                self.states.current_highlighter.clone(),
-                            )
-                            .run(&mut t, self.minibuffer)
-                            {
-                                self.states.current_highlighter = source;
-                                self.plot.highlighters.push(expr);
-                            }
+                        if let Some((source, expr)) =
+                            widgets::scan::ScanInput::new(self.states.current_highlighter.clone())
+                                .run(&mut t, self.minibuffer)
+                        {
+                            self.states.current_highlighter = source;
+                            self.plot.highlighters.push(expr);
                         }
                     }
                     _ => {}
@@ -233,7 +230,11 @@ impl Editor {
         }
     }
 
-    fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> anyhow::Result<()> {
+    fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> anyhow::Result<()>
+    where
+        <B as Backend>::Error: Send + Sync,
+        <B as Backend>::Error: 'static,
+    {
         loop {
             terminal.draw(|term| self.render(term))?;
             if let Event::Key(key) = event::read()? {

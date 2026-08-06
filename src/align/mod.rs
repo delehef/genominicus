@@ -497,7 +497,7 @@ pub fn align(seqs: &Sequences) -> (POAGraph, HashMap<SeqID, NodeIndex>) {
     //    small sequences insertion;
     // 2. Saving memory is always welcome.
     let mut sorted_seqs = seqs.iter().collect::<Vec<_>>();
-    sorted_seqs.sort_by(|(_, seq1), (_, seq2)| seq2.len().cmp(&seq1.len()));
+    sorted_seqs.sort_by_key(|(_, seq1)| std::cmp::Reverse(seq1.len()));
 
     let starts = sorted_seqs
         .iter()

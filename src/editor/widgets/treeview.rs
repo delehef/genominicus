@@ -380,11 +380,7 @@ impl TreeView {
                         }
                     }
                     Position::LowerBranch => {
-                        if is_duplication {
-                            r.push_str("  ");
-                        } else {
-                            r.push_str("  ");
-                        }
+                        r.push_str("  ");
                     }
                     Position::SingleChild => r.push_str("  "),
                 }
@@ -533,7 +529,7 @@ impl TreeView {
         ])
     }
 
-    fn to_rows(&mut self, f: &mut Frame, t: Rect) {
+    fn make_rows(&mut self, f: &mut Frame, t: Rect) {
         self.screen_to_nodes.clear();
 
         let mut rows = Vec::new();
@@ -577,7 +573,7 @@ impl TreeView {
                     .bottom_margin(1),
             )
             .highlight_symbol(">>")
-            .highlight_style(Style::new().underlined());
+            .row_highlight_style(Style::new().underlined());
         f.render_stateful_widget(&table, t, &mut self.states.gene_table);
     }
 
@@ -621,7 +617,7 @@ impl TreeView {
 
     /// Render the widget in the provided [`Rect`] within the [`Frame`].
     pub fn render(&mut self, f: &mut Frame, t: Rect) {
-        self.to_rows(f, t);
+        self.make_rows(f, t);
 
         f.render_stateful_widget(
             Scrollbar::default()

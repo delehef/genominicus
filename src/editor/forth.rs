@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use either::Either;
 use itertools::Itertools;
 use thiserror::Error;
@@ -104,15 +106,18 @@ impl TryFrom<&str> for Relation {
         }
     }
 }
-impl ToString for Relation {
-    fn to_string(&self) -> String {
-        match self {
-            Relation::StartsWith => "starts-with",
-            Relation::Equal => "equals",
-            Relation::EndsWith => "ends-with",
-            Relation::Contains => "contains",
-        }
-        .into()
+impl Display for Relation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Relation::StartsWith => "starts-with",
+                Relation::Equal => "equals",
+                Relation::EndsWith => "ends-with",
+                Relation::Contains => "contains",
+            }
+        )
     }
 }
 
@@ -168,13 +173,13 @@ impl std::fmt::Display for ForthExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ForthExpr::Combinator(c, args) => match c {
-                Combinator::Not => write!(f, "({} {})", c.to_string(), args[0]),
+                Combinator::Not => write!(f, "({} {})", c, args[0]),
                 _ => {
-                    write!(f, "({} {} {})", args[0], c.to_string(), args[1])
+                    write!(f, "({} {} {})", args[0], c, args[1])
                 }
             },
             ForthExpr::Relation(ff, args) => {
-                write!(f, "({} {} {})", args[0], ff.to_string(), args[1])
+                write!(f, "({} {} {})", args[0], ff, args[1])
             }
             ForthExpr::Projector(field) => write!(f, "gene.{}", field),
             ForthExpr::Const(x) => write!(f, "\"{}\"", x.clone()),
