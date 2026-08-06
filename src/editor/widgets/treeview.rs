@@ -103,7 +103,7 @@ impl States {
     fn new(size: usize) -> Self {
         States {
             gene_table: TableState::new().with_selected(0),
-            scrollbar: ScrollbarState::new(size - 1),
+            scrollbar: ScrollbarState::new(size.saturating_sub(1)),
         }
     }
 }
@@ -290,7 +290,7 @@ impl TreeView {
                         let dcs = tree
                             .attrs(n.id)
                             .get("DCS")
-                            .map(|x| x.parse::<f32>().unwrap())
+                            .and_then(|x| x.parse::<f32>().ok())
                             .unwrap_or_default();
 
                         Some(if *pure_head.read() {
@@ -600,7 +600,7 @@ impl TreeView {
             .states
             .gene_table
             .selected()
-            .map(|i| (i + count).clamp(0, self.len() - 1))
+            .map(|i| (i + count).clamp(0, self.len().saturating_sub(1)))
             .unwrap_or_default();
         self.move_to(i);
     }
@@ -612,7 +612,7 @@ impl TreeView {
 
     /// Move the cursor to the last line of the table.
     pub fn bottom(&mut self) {
-        self.move_to(self.len() - 1);
+        self.move_to(self.len().saturating_sub(1));
     }
 
     /// Render the widget in the provided [`Rect`] within the [`Frame`].

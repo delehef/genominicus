@@ -68,7 +68,7 @@ fn add_alignment(
         .iter()
         .filter_map(|x| x.as_ref())
         .collect::<Vec<_>>();
-    if alignment.0.is_empty() {
+    if alignment.0.is_empty() || valid_seq_idxs.is_empty() {
         return None;
     }
     let start_seq_idx = valid_seq_idxs[0];

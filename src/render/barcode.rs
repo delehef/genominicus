@@ -31,7 +31,7 @@ fn draw_nodes_in_tree(
     for mrca in nodes.keys() {
         let dups = &nodes[mrca];
         let opacity = 1. / dups.len() as f32;
-        let (mut x, mut y) = species_map.get(mrca).unwrap();
+        let (mut x, mut y) = species_map[mrca];
         for dcs in dups {
             let c = StyleColor::Percent(1. - dcs, *dcs, 0.);
             svg.polygon()
@@ -233,11 +233,11 @@ pub fn draw_duplications_blocks(
 
         let y_min =
             d.0.iter()
-                .flat_map(|a| a.0.iter().map(|s| species_map.get(s).unwrap().1))
+                .flat_map(|a| a.0.iter().map(|s| species_map[s].1))
                 .fold(f32::INFINITY, f32::min);
         let y_max =
             d.0.iter()
-                .flat_map(|a| a.0.iter().map(|s| species_map.get(s).unwrap().1))
+                .flat_map(|a| a.0.iter().map(|s| species_map[s].1))
                 .fold(f32::NEG_INFINITY, f32::max);
 
         out.polygon()
@@ -252,7 +252,7 @@ pub fn draw_duplications_blocks(
 
         for (shift, arm) in d.0.iter().enumerate() {
             for species in arm.0.iter() {
-                let y = species_map.get(species).unwrap().1;
+                let y = species_map[species].1;
                 out.polygon()
                     .from_pos_dims(xoffset + shift as f32 * K, y, K, K)
                     .style(|s| s.fill_color(Some(c.clone())));

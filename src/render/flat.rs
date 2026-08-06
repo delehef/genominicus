@@ -424,11 +424,11 @@ pub fn render(
     render: &RenderSettings,
 ) {
     let depth = BRANCH_WIDTH * (t.topological_depth().unwrap().1 as f32 + 1.);
-    let longest_name = (t.leaf_names().map(|name| name.len()).max().unwrap() as f32
+    let longest_name = (t.leaf_names().map(|name| name.len()).max().unwrap_or(0) as f32
         + t.leaves()
             .map(|l| t.attrs(l).get("S").map(|s| s.len()).unwrap_or(0))
             .max()
-            .unwrap() as f32
+            .unwrap_or(0) as f32
         + 20.)
         * FONT_SIZE;
     let xlabels = 0.85 * (10. + depth + longest_name + 20.);

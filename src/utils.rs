@@ -122,10 +122,13 @@ pub fn make_colormap(tree: &NewickTree, genes: &GeneCache) -> ColorMap {
             .as_ref()
             .and_then(|name| genes.get(name.as_str()))
         {
-            for tg in g.left_landscape.iter().chain(g.right_landscape.iter()) {
+            for family in std::iter::once(g.family)
+                .chain(g.left_landscape.iter().map(|tg| tg.family))
+                .chain(g.right_landscape.iter().map(|tg| tg.family))
+            {
                 colormap
-                    .entry(tg.family)
-                    .or_insert_with(|| gene2color(&tg.family.to_ne_bytes()));
+                    .entry(family)
+                    .or_insert_with(|| gene2color(&family.to_ne_bytes()));
             }
         }
     }
