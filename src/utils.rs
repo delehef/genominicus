@@ -8,7 +8,7 @@ use palette::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use svarog::*;
-use syntesuite::genebook::{FamilyID, Gene, GeneBook};
+use syntesuite::genebook::{FamilyId, Gene, GeneBook};
 
 pub const WINDOW: usize = 15;
 pub const GENE_WIDTH: f32 = 15.;
@@ -18,7 +18,7 @@ pub const FONT_SIZE: f32 = 10.;
 
 #[derive(Copy, Clone, Hash)]
 pub enum PoaElt {
-    Gene(FamilyID),
+    Gene(FamilyId),
     Marker,
     Indel,
     Empty,
@@ -61,8 +61,8 @@ pub struct RenderSettings {
 }
 
 pub type GeneCache = HashMap<String, Gene>;
-pub type ColorMap = HashMap<usize, StyleColor>;
-pub type PetnameMap = HashMap<usize, String>;
+pub type ColorMap = HashMap<FamilyId, StyleColor>;
+pub type PetnameMap = HashMap<FamilyId, String>;
 
 fn jaccard<T: std::hash::Hash + Eq>(x: &HashSet<T>, y: &HashSet<T>) -> f32 {
     x.intersection(y).count() as f32 / x.union(y).count() as f32
@@ -319,9 +319,9 @@ pub fn make_genes_cache(
 
             for l_name in leave_nodes.iter().filter_map(|l| t.name(*l)) {
                 if let Result::Ok(gene) = genes.get_mut(l_name) {
-                    let left_tail: HashSet<FamilyID> =
+                    let left_tail: HashSet<FamilyId> =
                         HashSet::from_iter(gene.left_landscape.iter().map(|tg| tg.family));
-                    let right_tail: HashSet<FamilyID> =
+                    let right_tail: HashSet<FamilyId> =
                         HashSet::from_iter(gene.right_landscape.iter().map(|tg| tg.family));
 
                     let direct_score =

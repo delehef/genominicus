@@ -47,7 +47,7 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
         colormap: &ColorMap,
     ) -> HtmlNode {
         let descendants = tree.descendants(node);
-        let mut common_ancestral = 0;
+        let mut common_ancestral = 0.into();
         let clustered = {
             // Node ID to tail mapping
             let tails = descendants
@@ -209,13 +209,13 @@ fn draw_html(tree: &NewickTree, genes: &GeneCache, colormap: &ColorMap) -> HtmlN
                     )
                 } else {
                     (
-                        (String::new(), String::new(), String::new(), 0),
+                        (String::new(), String::new(), String::new(), 0.into()),
                         (vec![], vec![]),
                     )
                 }
             } else {
                 (
-                    (String::new(), String::new(), String::new(), 0),
+                    (String::new(), String::new(), String::new(), 0.into()),
                     (vec![], vec![]),
                 )
             };

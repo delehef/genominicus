@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use crate::utils::*;
 use newick::*;
 use svarog::*;
-use syntesuite::genebook::FamilyID;
+use syntesuite::genebook::FamilyId;
 use syntesuite::genebook::Gene;
 use syntesuite::Strand;
 
@@ -127,7 +127,7 @@ fn draw_tree(
     tree: &NewickTree,
     current: DrawState,
     xlabels: f32,
-    links: &mut Vec<(f32, Vec<FamilyID>, FamilyID, Vec<FamilyID>)>,
+    links: &mut Vec<(f32, Vec<FamilyId>, FamilyId, Vec<FamilyId>)>,
     render: &RenderSettings,
 ) -> f32 {
     let mut y = current.yoffset;
@@ -260,7 +260,7 @@ fn draw_tree(
                 } else {
                     // The node was not found in the database
                     eprintln!("{} not found", gene_name);
-                    links.push((y, Vec::new(), 0, Vec::new()));
+                    links.push((y, Vec::new(), 0.into(), Vec::new()));
                 }
             }
             y += 20.;
@@ -410,7 +410,7 @@ fn draw_tree(
 
 fn draw_links(
     svg: &mut SvgDrawing,
-    links: &[(f32, Vec<FamilyID>, FamilyID, Vec<FamilyID>)],
+    links: &[(f32, Vec<FamilyId>, FamilyId, Vec<FamilyId>)],
     xlabels: f32,
 ) {
     for w in links.windows(2) {

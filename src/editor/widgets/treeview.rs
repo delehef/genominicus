@@ -12,7 +12,7 @@ use std::{
     rc::Rc,
     sync::OnceLock,
 };
-use syntesuite::genebook::Gene;
+use syntesuite::genebook::{FamilyId, Gene};
 
 use crate::{
     editor::forth::ForthExpr,
@@ -39,14 +39,16 @@ pub struct TreeViewSettings {
     pub use_symbols: bool,
 }
 
-fn family_to_char(id: usize) -> char {
+/// Map a family ID to a fancy unicode symbol.
+fn family_to_char(id: FamilyId) -> char {
     let chars_len = GENABET.get().unwrap().len();
 
-    GENABET.get().unwrap()[id % chars_len]
+    GENABET.get().unwrap()[*id % chars_len]
 }
 
-fn gene_to_char(family: usize, strand: syntesuite::Strand, symbol: bool) -> char {
-    if symbol {
+/// Map a family ID to either a fancy symbol or a strand arrow.
+fn gene_to_char(family: FamilyId, strand: syntesuite::Strand, use_symbols: bool) -> char {
+    if use_symbols {
         family_to_char(family)
     } else {
         match strand {
@@ -57,12 +59,14 @@ fn gene_to_char(family: usize, strand: syntesuite::Strand, symbol: bool) -> char
     }
 }
 
+/// The information required to display a gene.
 #[derive(Debug, Clone)]
 pub struct DispGene {
     pub name: String,
     pub species: String,
 }
 
+/// The information pertaining to genes: own data, landscape, and color mappings.
 pub struct LandscapeData {
     pub book: GeneCache,
     pub colors: ColorMap,
