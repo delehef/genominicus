@@ -40,7 +40,7 @@ enum Mode {
     Narrow,
 }
 impl Mode {
-    fn help(&'_ self) -> Line<'_> {
+    fn render(&'_ self) -> Line<'_> {
         match self {
             Mode::Root => Line::from(vec![
                 "[n]".yellow().bold(),
@@ -127,7 +127,7 @@ impl Editor {
             ])
             .split(f.area());
 
-        let title = Paragraph::new(self.mode.help()).block(
+        let title = Paragraph::new(self.mode.render()).block(
             Block::default()
                 .borders(Borders::BOTTOM)
                 .style(Style::default())
